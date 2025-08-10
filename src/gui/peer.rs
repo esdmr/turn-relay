@@ -1,6 +1,6 @@
 use std::{fmt::Display, net::SocketAddr, ops::Not};
 
-use iced::widget::{button, row, text, text_input, Row};
+use iced::{widget::{button, row, text, text_input, Row}, Task};
 use tokio::sync::broadcast;
 
 use crate::{
@@ -116,7 +116,7 @@ impl PeerEntryState {
         &mut self,
         message: PeerEntryMessage,
         command_snd: &broadcast::Sender<CommandMessage>,
-    ) {
+    ) -> Task<PeerEntryMessage> {
         use PeerEntryMessage::{
             Delete, OnBindFailed, OnBound, OnPermissionDenied, OnPermissionGranted, OnUnbound,
             Setup, UpdateLocal, UpdatePeer,
@@ -152,7 +152,7 @@ impl PeerEntryState {
                     Ok(i) => i,
                     Err(e) => {
                         eprintln!("Invalid peer address {peer_addr}: {e}");
-                        return;
+                        return Task::none();
                     }
                 };
 
@@ -168,7 +168,7 @@ impl PeerEntryState {
                             Some(addr!(LOCAL_IP:i))
                         } else {
                             eprintln!("Invalid local address {peer_addr}: {e}");
-                            return;
+                            return Task::none();
                         }
                     }
                     None => None,
@@ -206,7 +206,7 @@ impl PeerEntryState {
                             Some(addr!(LOCAL_IP:i))
                         } else {
                             eprintln!("Invalid local address {local_addr}: {e}");
-                            return;
+                            return Task::none();
                         }
                     }
                     None => None,
@@ -375,6 +375,8 @@ impl PeerEntryState {
                 eprintln!("message ignored: {OnUnbound:?} @ {self:?}");
             }
         }
+
+        Task::none()
     }
 
     pub fn view(&self, index: usize) -> Row<PeerEntryMessage> {

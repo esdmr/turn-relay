@@ -4,7 +4,7 @@ use crate::worker::{
     run_worker, CommandMessage, ServiceMessage, COMMAND_CHANNEL_CAPACITY, SERVICE_CHANNEL_CAPACITY,
 };
 
-use iced::{Element, Subscription};
+use iced::{Element, Subscription, Task};
 use tokio::sync::broadcast;
 
 #[derive(Debug)]
@@ -23,8 +23,8 @@ impl Default for App {
 }
 
 impl App {
-    pub fn update(&mut self, message: RelayMessage) {
-        self.state.update(message, &self.command_snd);
+    pub fn update(&mut self, message: RelayMessage) -> Task<RelayMessage> {
+        self.state.update(message, &self.command_snd)
     }
 
     pub fn view(&self) -> Element<RelayMessage> {

@@ -1,8 +1,9 @@
 use std::net::SocketAddr;
 
 use iced::{
+    clipboard,
     widget::{button, column, row, text, text_input, Column},
-    Element,
+    Element, Task,
 };
 use tokio::sync::broadcast;
 
@@ -70,7 +71,7 @@ impl RelayState {
         &mut self,
         message: RelayMessage,
         command_snd: &broadcast::Sender<CommandMessage>,
-    ) {
+    ) -> Task<RelayMessage> {
         use RelayMessage::{
             AddPeer, ChangeFwdAddr, Connect, CopyRelayAddr, Disconnect, OnAllocate,
             OnConnectionFailed, OnDisconnect, OnPeer, OnRedirect, Peer, UpdateFwdAddr,
@@ -128,6 +129,9 @@ impl RelayState {
                 unreachable!("invalid message: {:?} @ {:?}", Connect, self)
             }
 
+            (Self::Connected { relay_addr, .. }, CopyRelayAddr) => {
+                return clipboard::write(format!("{relay_addr}"));
+            }
             (_, CopyRelayAddr) => {
                 unreachable!("invalid message: {:?} @ {:?}", CopyRelayAddr, self)
             }
@@ -152,7 +156,7 @@ impl RelayState {
                             addr!(LOCAL_IP:i)
                         } else {
                             eprintln!("Invalid forward address {fwd_addr}: {e}");
-                            return;
+                            return Task::none();
                         }
                     }
                 };
@@ -260,7 +264,9 @@ impl RelayState {
             }
 
             (Self::Connected { .. }, Peer(index, sub_message)) => {
-                get_mut!(Self::Connected => self.peers)[index].update(sub_message, command_snd);
+                return get_mut!(Self::Connected => self.peers)[index]
+                    .update(sub_message, command_snd)
+                    .map(move |i| RelayMessage::Peer(index, i));
             }
             (_, Peer(index, sub_message)) => {
                 unreachable!(
@@ -271,11 +277,14 @@ impl RelayState {
             }
 
             (Self::Connected { .. }, OnPeer(peer_addr, sub_message)) => {
-                if let Some(peer) = get_mut!(Self::Connected => self.peers)
+                if let Some((index, peer)) = get_mut!(Self::Connected => self.peers)
                     .iter_mut()
-                    .find(|i| i.compare_peer(&peer_addr))
+                    .enumerate()
+                    .find(|(_, i)| i.compare_peer(&peer_addr))
                 {
-                    peer.update(sub_message, command_snd);
+                    return peer
+                        .update(sub_message, command_snd)
+                        .map(move |i| RelayMessage::Peer(index, i));
                 } else {
                     eprintln!(
                         "non-existent peer ignored: {:?} @ {:?}",
@@ -292,6 +301,8 @@ impl RelayState {
                 );
             }
         }
+
+        Task::none()
     }
 
     pub fn view(&self) -> Column<RelayMessage> {
