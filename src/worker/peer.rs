@@ -31,7 +31,7 @@ pub struct PeerWorker {
 }
 
 impl PeerWorker {
-    pub fn new(
+    pub const fn new(
         peer_addr: SocketAddr,
         pinned_addr: Option<SocketAddr>,
         fwd_addr: SocketAddr,
@@ -74,29 +74,34 @@ impl PeerWorker {
         socket_message: Option<Result<(BytesMut, SocketAddr), io::Error>>,
     ) -> WorkerResult {
         match socket_message {
-            Some(Ok((data, _src))) => {
+            Some(Ok((data, src))) => {
                 #[cfg(debug_assertions)]
-                println!("Peer {} < {} < {}", self.peer_addr, self.local_addr, _src);
+                println!("Peer {} < {} < {}", self.peer_addr, self.local_addr, src);
+                #[cfg(not(debug_assertions))]
+                let _ = src;
 
                 self.upstream_snd
                     .send((self.peer_addr, data.to_vec()))
                     .await
                     .anyhow()
-                    .as_recoverable()?;
+                    .into_recoverable()?;
 
                 WorkerResult::continued()
             }
 
-            Some(Err(e)) => Err(e).anyhow().as_recoverable(),
+            Some(Err(e)) => Err(e).anyhow().into_recoverable(),
 
             None => {
-                eprintln!("Peer {}: Warning: Socket {} is closed", self.peer_addr, self.local_addr);
+                eprintln!(
+                    "Peer {}: Warning: Socket {} is closed",
+                    self.peer_addr, self.local_addr
+                );
 
                 self.service_snd
                     .send(ServiceMessage::PeerUnbound(self.peer_addr))
                     .await
                     .anyhow()
-                    .as_unrecoverable()?;
+                    .into_unrecoverable()?;
 
                 WorkerResult::terminate()
             }
@@ -107,7 +112,7 @@ impl PeerWorker {
         &mut self,
         relay_message: Result<(SocketAddr, Vec<u8>), RecvError>,
     ) -> WorkerResult {
-        let (src, data) = relay_message.anyhow().as_recoverable()?;
+        let (src, data) = relay_message.anyhow().into_recoverable()?;
 
         if src == self.peer_addr {
             #[cfg(debug_assertions)]
@@ -122,7 +127,7 @@ impl PeerWorker {
                 .send((Bytes::from(data), self.fwd_addr))
                 .await
                 .anyhow()
-                .as_recoverable()?;
+                .into_recoverable()?;
         }
 
         WorkerResult::continued()
@@ -132,16 +137,19 @@ impl PeerWorker {
         &mut self,
         command_message: Result<CommandMessage, RecvError>,
     ) -> WorkerResult {
-        use CommandMessage::*;
+        use CommandMessage::{
+            ChangeFwdAddr, ConnectPeer, ConnectRelay, DisconnectAll, DisconnectPeer, TerminateAll,
+        };
 
-        match command_message.anyhow().as_recoverable()? {
-            ConnectRelay { .. } => WorkerResult::continued(),
-            ConnectPeer { .. } => WorkerResult::continued(),
+        match command_message.anyhow().into_recoverable()? {
+            ConnectRelay { .. } | ConnectPeer { .. } => WorkerResult::continued(),
+
             ChangeFwdAddr(i) => {
                 println!("Peer {} <> {} <> {}", self.peer_addr, self.local_addr, i);
                 self.fwd_addr = i;
                 WorkerResult::continued()
             }
+
             DisconnectAll | TerminateAll => {
                 self.socket = None;
 
@@ -149,10 +157,11 @@ impl PeerWorker {
                     .send(ServiceMessage::PeerUnbound(self.peer_addr))
                     .await
                     .anyhow()
-                    .as_unrecoverable()?;
+                    .into_unrecoverable()?;
 
                 WorkerResult::terminate()
             }
+
             DisconnectPeer(i) => {
                 if self.peer_addr == i {
                     self.socket = None;
@@ -160,7 +169,7 @@ impl PeerWorker {
                         .send(ServiceMessage::PeerUnbound(self.peer_addr))
                         .await
                         .anyhow()
-                        .as_unrecoverable()?;
+                        .into_unrecoverable()?;
                     WorkerResult::terminate()
                 } else {
                     WorkerResult::continued()

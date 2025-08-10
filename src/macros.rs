@@ -12,7 +12,7 @@ pub(crate) use get_mut;
 macro_rules! take_value {
     ($($Variant:path)|+ => $self:ident.$prop:ident) => {
         match $self {
-            $($Variant { $prop, .. })|+ => ::std::mem::replace($prop, Default::default()),
+            $($Variant { $prop, .. })|+ => ::std::mem::take($prop),
             _ => unreachable!(),
         }
     };

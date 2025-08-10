@@ -15,3 +15,11 @@ turnclient = "0.5.0"
 [profile.release]
 lto = true
 opt-level = 2
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+nursery = { level = "warn", priority = -1 }
+
+module_name_repetitions = "allow"
+future_not_send = "allow"

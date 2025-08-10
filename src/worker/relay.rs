@@ -8,12 +8,11 @@ use tokio::select;
 use tokio::sync::broadcast;
 
 use futures::channel::mpsc;
-use turnclient::{
-    ChannelUsage, MessageFromTurnServer, MessageToTurnServer, TurnClientBuilder,
-};
+use turnclient::{ChannelUsage, MessageFromTurnServer, MessageToTurnServer, TurnClientBuilder};
 
 use crate::worker::types::{
-    CommandMessage, DataMessage, ServiceMessage, ToAnyhowResult, ToWorkerErr, MaybeTurnClient, WorkerErr, WorkerErrHelper, WorkerOk, WorkerResult, WorkerResultHelper
+    CommandMessage, DataMessage, MaybeTurnClient, ServiceMessage, ToAnyhowResult, ToWorkerErr,
+    WorkerErr, WorkerErrHelper, WorkerOk, WorkerResult, WorkerResultHelper,
 };
 use crate::DEFAULT_SOCKET_ADDR;
 
@@ -50,17 +49,21 @@ impl RelayWorker {
         &mut self,
         turn_message: Option<Result<MessageFromTurnServer, anyhow::Error>>,
     ) -> WorkerResult {
-        use MessageFromTurnServer::*;
+        use MessageFromTurnServer::{
+            APacketIsReceivedAndAutomaticallyHandled, AllocationGranted, Disconnected,
+            ForeignPacket, NetworkChange, PermissionCreated, PermissionNotCreated, RecvFrom,
+            RedirectedToAlternateServer,
+        };
 
         match turn_message {
             Some(Ok(AllocationGranted { relay_address, .. })) => {
-                println!("Relay: Available at {}", relay_address);
+                println!("Relay: Available at {relay_address}");
 
                 self.service_snd
                     .send(ServiceMessage::RelayAllocated(relay_address))
                     .await
                     .anyhow()
-                    .as_unrecoverable()?;
+                    .into_unrecoverable()?;
 
                 WorkerResult::continued()
             }
@@ -69,45 +72,45 @@ impl RelayWorker {
                 self.downstream_snd
                     .send((src, data))
                     .anyhow()
-                    .as_recoverable()?;
+                    .into_recoverable()?;
 
                 WorkerResult::continued()
             }
 
             Some(Ok(RedirectedToAlternateServer(new_addr))) => {
-                println!("Relay: Redirected to {}", new_addr);
+                println!("Relay: Redirected to {new_addr}");
 
                 self.service_snd
                     .send(ServiceMessage::RelayRedirected(new_addr))
                     .await
                     .anyhow()
-                    .as_unrecoverable()?;
+                    .into_unrecoverable()?;
 
                 WorkerResult::continued()
             }
 
             Some(Ok(PermissionCreated(peer_addr))) => {
-                println!("Relay: Granted send permission to {}", peer_addr);
+                println!("Relay: Granted send permission to {peer_addr}");
 
-                self.granted_peers.insert(format!("{}", peer_addr));
+                self.granted_peers.insert(format!("{peer_addr}"));
 
                 self.service_snd
                     .send(ServiceMessage::RelayPeerGranted(peer_addr))
                     .await
                     .anyhow()
-                    .as_recoverable()?;
+                    .into_recoverable()?;
 
                 WorkerResult::continued()
             }
 
             Some(Ok(PermissionNotCreated(peer_addr))) => {
-                println!("Relay: Denied send permission to {}", peer_addr);
+                println!("Relay: Denied send permission to {peer_addr}");
 
                 self.service_snd
                     .send(ServiceMessage::RelayPeerDenied(peer_addr))
                     .await
                     .anyhow()
-                    .as_recoverable()?;
+                    .into_recoverable()?;
 
                 WorkerResult::continued()
             }
@@ -119,24 +122,26 @@ impl RelayWorker {
                     .send(ServiceMessage::RelayDisconnected)
                     .await
                     .anyhow()
-                    .as_unrecoverable()?;
+                    .into_unrecoverable()?;
 
                 WorkerResult::continued()
             }
 
             Some(Ok(APacketIsReceivedAndAutomaticallyHandled)) => WorkerResult::continued(),
-            Some(Ok(ForeignPacket(_src, _))) => {
+            Some(Ok(ForeignPacket(src, _))) => {
                 #[cfg(debug_assertions)]
-                eprintln!("Relay: Warning: Ignoring an invalid packet from {}", _src);
+                eprintln!("Relay: Warning: Ignoring an invalid packet from {src}");
+                #[cfg(not(debug_assertions))]
+                let _ = src;
 
                 WorkerResult::continued()
-            },
+            }
             Some(Ok(NetworkChange)) => {
                 eprintln!("Relay: Warning: Network changed");
 
                 WorkerResult::continued()
-            },
-            Some(Err(e)) => Err(e).as_recoverable(),
+            }
+            Some(Err(e)) => Err(e).into_recoverable(),
 
             None => {
                 self.client.0 = None;
@@ -156,11 +161,11 @@ impl RelayWorker {
         let (dst, data) = peer_message.unwrap();
 
         if let Some(client) = &mut self.client.0 {
-            if self.granted_peers.contains(&format!("{}", dst)) {
+            if self.granted_peers.contains(&format!("{dst}")) {
                 client
                     .send(MessageToTurnServer::SendTo(dst, data))
                     .await
-                    .as_recoverable()?;
+                    .into_recoverable()?;
             }
         }
 
@@ -172,7 +177,7 @@ impl RelayWorker {
             .send(ServiceMessage::RelayConnectionFailed(error))
             .await
             .anyhow()
-            .as_unrecoverable()?;
+            .into_unrecoverable()?;
 
         WorkerResult::continued()
     }
@@ -181,9 +186,11 @@ impl RelayWorker {
         &mut self,
         command_message: Result<CommandMessage, broadcast::error::RecvError>,
     ) -> WorkerResult {
-        use CommandMessage::*;
+        use CommandMessage::{
+            ChangeFwdAddr, ConnectPeer, ConnectRelay, DisconnectAll, DisconnectPeer, TerminateAll,
+        };
 
-        match command_message.anyhow().as_recoverable()? {
+        match command_message.anyhow().into_recoverable()? {
             ConnectRelay {
                 server,
                 username,
@@ -201,7 +208,7 @@ impl RelayWorker {
                     i.next()
                         .ok_or_else(|| anyhow!("Could not resolve {}", server))
                 })
-                .catch_async(|e| self.signal_connection_error(format!("{}", e)))
+                .catch_async(|e| self.signal_connection_error(format!("{e}")))
                 .await?;
 
                 self.client.0 = Some(
@@ -209,12 +216,12 @@ impl RelayWorker {
                         UdpSocket::bind(DEFAULT_SOCKET_ADDR)
                             .await
                             .anyhow()
-                            .catch_async(|e| self.signal_connection_error(format!("{}", e)))
+                            .catch_async(|e| self.signal_connection_error(format!("{e}")))
                             .await?,
                     ),
                 );
 
-                println!("Relay: Connected to {}; Waiting for allocation", server);
+                println!("Relay: Connected to {server}; Waiting for allocation");
 
                 WorkerResult::continued()
             }
@@ -224,16 +231,16 @@ impl RelayWorker {
                 local_addr: _,
             } => {
                 if let Some(client) = &mut self.client.0 {
-                    if self.granted_peers.contains(&format!("{}", peer_addr)) {
-                        println!("Relay: Send permission for {} was already granted", peer_addr);
+                    if self.granted_peers.contains(&format!("{peer_addr}")) {
+                        println!("Relay: Send permission for {peer_addr} was already granted");
 
                         self.service_snd
                             .send(ServiceMessage::RelayPeerGranted(peer_addr))
                             .await
                             .anyhow()
-                            .as_recoverable()?;
+                            .into_recoverable()?;
                     } else {
-                        println!("Relay: Requesting send permission for {}", peer_addr);
+                        println!("Relay: Requesting send permission for {peer_addr}");
 
                         client
                             .send(MessageToTurnServer::AddPermission(
@@ -241,7 +248,7 @@ impl RelayWorker {
                                 ChannelUsage::WithChannel,
                             ))
                             .await
-                            .as_recoverable()?;
+                            .into_recoverable()?;
                     }
                 } else {
                     eprintln!("Relay: Warning: Ignoring permission request while client is not connected yet");
@@ -250,7 +257,7 @@ impl RelayWorker {
                         .send(ServiceMessage::RelayDisconnected)
                         .await
                         .anyhow()
-                        .as_recoverable()?;
+                        .into_recoverable()?;
                 }
 
                 WorkerResult::continued()
@@ -263,7 +270,7 @@ impl RelayWorker {
                     client
                         .send(MessageToTurnServer::Disconnect)
                         .await
-                        .as_recoverable()?;
+                        .into_recoverable()?;
                 }
 
                 WorkerResult::continued()
@@ -278,14 +285,13 @@ impl RelayWorker {
                     client
                         .send(MessageToTurnServer::Disconnect)
                         .await
-                        .as_unrecoverable()?;
+                        .into_unrecoverable()?;
                 }
 
                 WorkerResult::continued()
             }
 
-            ChangeFwdAddr(..) => WorkerResult::continued(),
-            DisconnectPeer(..) => WorkerResult::continued(),
+            ChangeFwdAddr(..) | DisconnectPeer(..) => WorkerResult::continued(),
         }
     }
 
@@ -308,15 +314,15 @@ impl RelayWorker {
 
         loop {
             match self.handle_loop().await {
-                Ok(WorkerOk::Continue) => {},
+                Ok(WorkerOk::Continue) => {}
                 Ok(WorkerOk::Terminate) => break,
                 Err(WorkerErr::RecoverableError(error)) => {
-                    eprintln!("Relay: Error: {}", error);
-                },
+                    eprintln!("Relay: Error: {error}");
+                }
                 Err(WorkerErr::UnrecoverableError(error)) => {
-                    eprintln!("Relay: Fatal: {}", error);
+                    eprintln!("Relay: Fatal: {error}");
                     break;
-                },
+                }
             }
         }
 

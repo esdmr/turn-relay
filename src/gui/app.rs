@@ -15,7 +15,7 @@ pub struct App {
 
 impl Default for App {
     fn default() -> Self {
-        App {
+        Self {
             command_snd: broadcast::Sender::<CommandMessage>::new(COMMAND_CHANNEL_CAPACITY),
             state: RelayState::default(),
         }
@@ -42,8 +42,11 @@ impl App {
         )
         .map(|i| {
             use PeerEntryMessage as Peer;
-            use RelayMessage::*;
-            use ServiceMessage::*;
+            use RelayMessage::{OnAllocate, OnConnectionFailed, OnDisconnect, OnPeer, OnRedirect};
+            use ServiceMessage::{
+                PeerBindFailed, PeerBound, PeerUnbound, RelayAllocated, RelayConnectionFailed,
+                RelayDisconnected, RelayPeerDenied, RelayPeerGranted, RelayRedirected,
+            };
 
             match i {
                 RelayAllocated(socket_addr) => OnAllocate(socket_addr),

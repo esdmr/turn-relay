@@ -9,7 +9,8 @@ use tokio::sync::broadcast;
 use crate::{
     gui::peer::{PeerEntryMessage, PeerEntryState},
     macros::{get_mut, take_value},
-    worker::CommandMessage, DEFAULT_FWD_SOCKET_ADDR,
+    worker::CommandMessage,
+    DEFAULT_FWD_SOCKET_ADDR,
 };
 
 #[derive(Debug, Clone)]
@@ -56,20 +57,25 @@ pub enum RelayState {
 impl Default for RelayState {
     fn default() -> Self {
         Self::Disconnected {
-            server: "".to_string(),
-            username: "".to_string(),
-            password: "".to_string(),
+            server: String::new(),
+            username: String::new(),
+            password: String::new(),
         }
     }
 }
 
 impl RelayState {
+    #[allow(clippy::too_many_lines, clippy::cognitive_complexity)]
     pub fn update(
         &mut self,
         message: RelayMessage,
         command_snd: &broadcast::Sender<CommandMessage>,
     ) {
-        use RelayMessage::*;
+        use RelayMessage::{
+            AddPeer, ChangeFwdAddr, Connect, CopyRelayAddr, Disconnect, OnAllocate,
+            OnConnectionFailed, OnDisconnect, OnPeer, OnRedirect, Peer, UpdateFwdAddr,
+            UpdatePassword, UpdateServer, UpdateUsername,
+        };
 
         match (&self, message) {
             (Self::Disconnected { .. }, UpdateServer(value)) => {
@@ -145,7 +151,7 @@ impl RelayState {
                         if let Ok(i) = fwd_addr.parse() {
                             SocketAddr::new(DEFAULT_FWD_SOCKET_ADDR.ip(), i)
                         } else {
-                            eprintln!("Invalid forward address {}: {}", fwd_addr, e);
+                            eprintln!("Invalid forward address {fwd_addr}: {e}");
                             return;
                         }
                     }
@@ -206,7 +212,7 @@ impl RelayState {
                 };
             }
             (_, OnDisconnect) => {
-                eprintln!("message ignored: {:?} @ {:?}", OnDisconnect, self);
+                eprintln!("message ignored: {OnDisconnect:?} @ {self:?}");
             }
 
             (
@@ -228,25 +234,25 @@ impl RelayState {
 
             (Self::Disconnected { .. }, OnRedirect(server)) => {
                 *self = Self::Disconnected {
-                    server: format!("{}", server),
+                    server: format!("{server}"),
                     username: take_value!(Self::Disconnected => self.username),
                     password: take_value!(Self::Disconnected => self.password),
                 };
             }
             (Self::Connecting { .. }, OnRedirect(server)) => {
                 *self = Self::Connecting {
-                    server: format!("{}", server),
+                    server: format!("{server}"),
                 };
             }
             (Self::ConnectionFailed { .. }, OnRedirect(server)) => {
                 *self = Self::ConnectionFailed {
-                    server: format!("{}", server),
+                    server: format!("{server}"),
                     why: take_value!(Self::ConnectionFailed => self.why),
                 };
             }
             (Self::Connected { .. }, OnRedirect(server)) => {
                 *self = Self::Connected {
-                    server: format!("{}", server),
+                    server: format!("{server}"),
                     relay_addr: take_value!(Self::Connected => self.relay_addr: SocketAddr),
                     fwd_addr: take_value!(Self::Connected => self.fwd_addr),
                     peers: take_value!(Self::Connected => self.peers),
@@ -289,7 +295,10 @@ impl RelayState {
     }
 
     pub fn view(&self) -> Column<RelayMessage> {
-        use RelayMessage::*;
+        use RelayMessage::{
+            AddPeer, ChangeFwdAddr, Connect, CopyRelayAddr, Disconnect, Peer, UpdateFwdAddr,
+            UpdatePassword, UpdateServer, UpdateUsername,
+        };
 
         match self {
             Self::Disconnected {
@@ -299,15 +308,15 @@ impl RelayState {
             } => column![
                 row![
                     text!("Server: "),
-                    text_input("example.com:12345", server).on_input(|i| UpdateServer(i)),
+                    text_input("example.com:12345", server).on_input(UpdateServer),
                 ],
                 row![
                     text!("Username: "),
-                    text_input("12345:user", username).on_input(|i| UpdateUsername(i)),
+                    text_input("12345:user", username).on_input(UpdateUsername),
                 ],
                 row![
                     text!("Password: "),
-                    text_input("abc123", password).on_input(|i| UpdatePassword(i)),
+                    text_input("abc123", password).on_input(UpdatePassword),
                 ],
                 button(text!("Connect")).on_press(Connect),
             ],
@@ -337,7 +346,7 @@ impl RelayState {
                 ],
                 row![
                     text!("Forward to "),
-                    text_input("127.0.0.1:12345", fwd_addr).on_input(|i| UpdateFwdAddr(i)),
+                    text_input("127.0.0.1:12345", fwd_addr).on_input(UpdateFwdAddr),
                     button(text!("Apply")).on_press(ChangeFwdAddr),
                 ],
                 row![

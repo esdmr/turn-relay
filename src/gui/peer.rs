@@ -34,7 +34,7 @@ impl Display for PeerLocalState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Unbound(_) => write!(f, "Unbound"),
-            Self::Bound(addr, _) => write!(f, "{}", addr),
+            Self::Bound(addr, _) => write!(f, "{addr}"),
         }
     }
 }
@@ -103,16 +103,20 @@ impl PeerEntryState {
         }
     }
 
-    pub fn is_uncommitted(&self) -> bool {
+    pub const fn is_uncommitted(&self) -> bool {
         matches!(self, Self::EditingPeer { .. })
     }
 
+    #[allow(clippy::too_many_lines, clippy::cognitive_complexity)]
     pub fn update(
         &mut self,
         message: PeerEntryMessage,
         command_snd: &broadcast::Sender<CommandMessage>,
     ) {
-        use PeerEntryMessage::*;
+        use PeerEntryMessage::{
+            Delete, OnBindFailed, OnBound, OnPermissionDenied, OnPermissionGranted, OnUnbound,
+            Setup, UpdateLocal, UpdatePeer,
+        };
 
         match (&self, message) {
             (
@@ -143,9 +147,9 @@ impl PeerEntryState {
                 let peer_addr = match peer_addr.parse::<SocketAddr>() {
                     Ok(i) => i,
                     Err(e) => {
-                        eprintln!("Invalid peer address {}: {}", peer_addr, e);
+                        eprintln!("Invalid peer address {peer_addr}: {e}");
                         return;
-                    },
+                    }
                 };
 
                 let local_addr = match local_addr
@@ -159,10 +163,10 @@ impl PeerEntryState {
                         if let Ok(i) = local_addr.parse() {
                             Some(SocketAddr::new(DEFAULT_SOCKET_ADDR.ip(), i))
                         } else {
-                            eprintln!("Invalid local address {}: {}", peer_addr, e);
+                            eprintln!("Invalid local address {peer_addr}: {e}");
                             return;
                         }
-                    },
+                    }
                     None => None,
                 };
 
@@ -174,7 +178,7 @@ impl PeerEntryState {
                     .unwrap();
 
                 *self = Self::Waiting {
-                    peer_addr: peer_addr,
+                    peer_addr,
                     local_addr: PeerLocalState::Unbound(local_addr),
                     authorized: false,
                 };
@@ -197,10 +201,10 @@ impl PeerEntryState {
                         if let Ok(i) = local_addr.parse() {
                             Some(SocketAddr::new(DEFAULT_SOCKET_ADDR.ip(), i))
                         } else {
-                            eprintln!("Invalid local address {}: {}", local_addr, e);
+                            eprintln!("Invalid local address {local_addr}: {e}");
                             return;
                         }
-                    },
+                    }
                     None => None,
                 };
 
@@ -272,7 +276,7 @@ impl PeerEntryState {
                 };
             }
             (_, OnPermissionGranted) => {
-                eprintln!("message ignored: {:?} @ {:?}", OnPermissionGranted, self);
+                eprintln!("message ignored: {OnPermissionGranted:?} @ {self:?}");
             }
 
             (Self::Waiting { .. }, OnPermissionDenied) => {
@@ -290,7 +294,7 @@ impl PeerEntryState {
                 }
             }
             (_, OnPermissionDenied) => {
-                eprintln!("message ignored: {:?} @ {:?}", OnPermissionDenied, self);
+                eprintln!("message ignored: {OnPermissionDenied:?} @ {self:?}");
             }
 
             (
@@ -332,7 +336,7 @@ impl PeerEntryState {
                 };
             }
             (_, OnBindFailed) => {
-                eprintln!("message ignored: {:?} @ {:?}", OnBindFailed, self);
+                eprintln!("message ignored: {OnBindFailed:?} @ {self:?}");
             }
 
             (
@@ -357,20 +361,20 @@ impl PeerEntryState {
                     local_addr: if let PeerLocalState::Bound(addr, true)
                     | PeerLocalState::Unbound(Some(addr)) = local_addr
                     {
-                        format!("{}", addr)
+                        format!("{addr}")
                     } else {
                         String::default()
                     },
                 }
             }
             (_, OnUnbound) => {
-                eprintln!("message ignored: {:?} @ {:?}", OnBindFailed, self);
+                eprintln!("message ignored: {OnUnbound:?} @ {self:?}");
             }
         }
     }
 
     pub fn view(&self, index: usize) -> Row<PeerEntryMessage> {
-        use PeerEntryMessage::*;
+        use PeerEntryMessage::{Delete, Setup, UpdateLocal, UpdatePeer};
 
         match self {
             Self::EditingPeer {
@@ -378,8 +382,8 @@ impl PeerEntryState {
                 local_addr,
             } => row![
                 text!("{: <1$} ", "", index.to_string().len()),
-                text_input("123.45.67.89:12345", peer_addr).on_input(|value| UpdatePeer(value)),
-                text_input("127.0.0.1:12345", local_addr).on_input(|value| UpdateLocal(value)),
+                text_input("123.45.67.89:12345", peer_addr).on_input(UpdatePeer),
+                text_input("127.0.0.1:12345", local_addr).on_input(UpdateLocal),
                 button(text!("+")).on_press(Setup),
             ],
             Self::EditingLocal {
@@ -388,7 +392,7 @@ impl PeerEntryState {
             } => row![
                 text!("{})", index),
                 text!("{}", peer_addr),
-                text_input("127.0.0.1:12345", local_addr).on_input(|value| UpdateLocal(value)),
+                text_input("127.0.0.1:12345", local_addr).on_input(UpdateLocal),
                 button(text!("+")).on_press(Setup),
             ],
             Self::Waiting {

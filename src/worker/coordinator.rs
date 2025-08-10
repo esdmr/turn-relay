@@ -1,4 +1,4 @@
-use std::mem::replace;
+use std::mem::take;
 use std::{collections::HashMap, net::SocketAddr};
 
 use crate::worker::types::{CommandMessage, ServiceMessage};
@@ -19,7 +19,10 @@ pub const DATA_CHANNEL_CAPACITY: usize = u8::MAX as usize;
 pub const SERVICE_CHANNEL_CAPACITY: usize = u8::MAX as usize;
 pub const COMMAND_CHANNEL_CAPACITY: usize = u8::MAX as usize;
 
-pub struct CoordinatorWorker<F: FnMut() -> broadcast::Receiver<CommandMessage>> {
+pub struct CoordinatorWorker<F>
+where
+    F: Send + FnMut() -> broadcast::Receiver<CommandMessage>,
+{
     subscribe_command: F,
     command_rcv: broadcast::Receiver<CommandMessage>,
     service_snd: mpsc::Sender<ServiceMessage>,
@@ -32,7 +35,7 @@ pub struct CoordinatorWorker<F: FnMut() -> broadcast::Receiver<CommandMessage>> 
 
 impl<F> CoordinatorWorker<F>
 where
-    F: FnMut() -> broadcast::Receiver<CommandMessage>,
+    F: Send + FnMut() -> broadcast::Receiver<CommandMessage>,
 {
     pub fn new(mut subscribe_command: F, service_snd: mpsc::Sender<ServiceMessage>) -> Self {
         let command_rcv = subscribe_command();
@@ -66,9 +69,11 @@ where
         &mut self,
         command_message: Result<CommandMessage, RecvError>,
     ) -> WorkerResult {
-        use CommandMessage::*;
+        use CommandMessage::{
+            ChangeFwdAddr, ConnectPeer, ConnectRelay, DisconnectAll, DisconnectPeer, TerminateAll,
+        };
 
-        match command_message.anyhow().as_recoverable()? {
+        match command_message.anyhow().into_recoverable()? {
             ConnectRelay { .. } => WorkerResult::continued(),
 
             ConnectPeer {
@@ -95,7 +100,7 @@ where
             }
 
             ChangeFwdAddr(i) => {
-                println!("Coordinator: New peers will forward to {}", i);
+                println!("Coordinator: New peers will forward to {i}");
                 self.fwd_addr = i;
                 WorkerResult::continued()
             }
@@ -103,25 +108,24 @@ where
             DisconnectAll => {
                 println!("Coordinator: Disconnecting everything");
 
-                let peers = replace(&mut self.peers, HashMap::new());
+                let peers = take(&mut self.peers);
 
                 join_all(peers.into_values())
                     .await
                     .into_iter()
                     .collect::<Result<Vec<()>, _>>()
                     .anyhow()
-                    .as_recoverable()?;
+                    .into_recoverable()?;
 
                 WorkerResult::continued()
             }
 
             DisconnectPeer(peer_addr) => {
                 if let Some(peer) = self.peers.remove(&peer_addr.to_string()) {
-                    peer.await.anyhow().as_recoverable()?;
+                    peer.await.anyhow().into_recoverable()?;
                 } else {
                     eprintln!(
-                        "Coordinator: Warning: Could not find peer {} to disconnect",
-                        peer_addr
+                        "Coordinator: Warning: Could not find peer {peer_addr} to disconnect"
                     );
                 }
 
@@ -131,16 +135,16 @@ where
             TerminateAll => {
                 println!("Coordinator: Terminating");
 
-                (&mut self.relay).await.anyhow().as_unrecoverable()?;
+                (&mut self.relay).await.anyhow().into_unrecoverable()?;
 
-                let peers = replace(&mut self.peers, HashMap::new());
+                let peers = take(&mut self.peers);
 
                 join_all(peers.into_values())
                     .await
                     .into_iter()
                     .collect::<Result<Vec<()>, _>>()
                     .anyhow()
-                    .as_unrecoverable()?;
+                    .into_unrecoverable()?;
 
                 WorkerResult::terminate()
             }
@@ -160,10 +164,10 @@ where
                 Ok(WorkerOk::Continue) => {}
                 Ok(WorkerOk::Terminate) => break,
                 Err(WorkerErr::RecoverableError(error)) => {
-                    eprintln!("Coordinator: Error: {}", error);
+                    eprintln!("Coordinator: Error: {error}");
                 }
                 Err(WorkerErr::UnrecoverableError(error)) => {
-                    eprintln!("Coordinator: Fatal: {}", error);
+                    eprintln!("Coordinator: Fatal: {error}");
                     break;
                 }
             }

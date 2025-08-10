@@ -70,19 +70,19 @@ where
 
 pub trait ToWorkerErr {
     type Item;
-    fn as_recoverable(self) -> Result<Self::Item, WorkerErr>;
-    fn as_unrecoverable(self) -> Result<Self::Item, WorkerErr>;
+    fn into_recoverable(self) -> Result<Self::Item, WorkerErr>;
+    fn into_unrecoverable(self) -> Result<Self::Item, WorkerErr>;
 }
 
 impl<T> ToWorkerErr for Result<T, anyhow::Error> {
     type Item = T;
 
-    fn as_recoverable(self) -> Result<Self::Item, WorkerErr> {
-        self.map_err(|e| WorkerErr::RecoverableError(e))
+    fn into_recoverable(self) -> Result<Self::Item, WorkerErr> {
+        self.map_err(WorkerErr::RecoverableError)
     }
 
-    fn as_unrecoverable(self) -> Result<Self::Item, WorkerErr> {
-        self.map_err(|e| WorkerErr::UnrecoverableError(e))
+    fn into_unrecoverable(self) -> Result<Self::Item, WorkerErr> {
+        self.map_err(WorkerErr::UnrecoverableError)
     }
 }
 
@@ -113,19 +113,19 @@ impl WorkerResultHelper for WorkerResult {
 }
 
 pub trait WorkerErrHelper {
-	type Result;
+    type Result;
     fn catch<R, F>(self, f: F) -> Self::Result
     where
         F: FnOnce(&anyhow::Error) -> Result<R, WorkerErr>;
 
     fn catch_async<RR, R, F>(self, f: F) -> impl Future<Output = Self::Result>
     where
-        F: FnOnce(&anyhow::Error) -> RR,
-		RR: Future<Output = Result<R, WorkerErr>>;
+        F: Send + FnOnce(&anyhow::Error) -> RR,
+        RR: Future<Output = Result<R, WorkerErr>>;
 }
 
 impl<T> WorkerErrHelper for Result<T, WorkerErr> {
-	type Result = Self;
+    type Result = Self;
 
     fn catch<R, F>(self, f: F) -> Self::Result
     where
@@ -138,35 +138,38 @@ impl<T> WorkerErrHelper for Result<T, WorkerErr> {
         self
     }
 
-	async fn catch_async<RR, R, F>(self, f: F) -> Self::Result
-		where
-			F: FnOnce(&anyhow::Error) -> RR,
-			RR: Future<Output = Result<R, WorkerErr>> {
-		if let Err(WorkerErr::RecoverableError(e) | WorkerErr::UnrecoverableError(e)) = &self {
+    async fn catch_async<RR, R, F>(self, f: F) -> Self::Result
+    where
+        F: Send + FnOnce(&anyhow::Error) -> RR,
+        RR: Future<Output = Result<R, WorkerErr>>,
+    {
+        if let Err(WorkerErr::RecoverableError(e) | WorkerErr::UnrecoverableError(e)) = &self {
             f(e).await?;
         }
 
         self
-	}
+    }
 }
 
 impl<T> WorkerErrHelper for Result<T, anyhow::Error> {
-	type Result = Result<T, WorkerErr>;
+    type Result = Result<T, WorkerErr>;
 
-	#[inline]
-	fn catch<R, F>(self, f: F) -> Self::Result
-		where
-			F: FnOnce(&anyhow::Error) -> Result<R, WorkerErr> {
-		self.as_recoverable().catch(f)
-	}
+    #[inline]
+    fn catch<R, F>(self, f: F) -> Self::Result
+    where
+        F: FnOnce(&anyhow::Error) -> Result<R, WorkerErr>,
+    {
+        self.into_recoverable().catch(f)
+    }
 
-	#[inline]
-	async fn catch_async<RR, R, F>(self, f: F) -> Self::Result
-		where
-			F: FnOnce(&anyhow::Error) -> RR,
-			RR: Future<Output = Result<R, WorkerErr>> {
-		self.as_recoverable().catch_async(f).await
-	}
+    #[inline]
+    async fn catch_async<RR, R, F>(self, f: F) -> Self::Result
+    where
+        F: Send + FnOnce(&anyhow::Error) -> RR,
+        RR: Future<Output = Result<R, WorkerErr>>,
+    {
+        self.into_recoverable().catch_async(f).await
+    }
 }
 
 pub struct MaybeTurnClient(pub Option<TurnClient>);
