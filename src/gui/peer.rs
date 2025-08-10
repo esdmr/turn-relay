@@ -3,7 +3,11 @@ use std::{fmt::Display, net::SocketAddr, ops::Not};
 use iced::widget::{button, row, text, text_input, Row};
 use tokio::sync::broadcast;
 
-use crate::{macros::take_value, worker::CommandMessage, DEFAULT_SOCKET_ADDR};
+use crate::{
+    macros::{addr, take_value},
+    worker::CommandMessage,
+    LOCAL_IP,
+};
 
 #[derive(Debug, Clone)]
 pub enum PeerEntryMessage {
@@ -161,7 +165,7 @@ impl PeerEntryState {
                     Some(Ok(i)) => Some(i),
                     Some(Err(e)) => {
                         if let Ok(i) = local_addr.parse() {
-                            Some(SocketAddr::new(DEFAULT_SOCKET_ADDR.ip(), i))
+                            Some(addr!(LOCAL_IP:i))
                         } else {
                             eprintln!("Invalid local address {peer_addr}: {e}");
                             return;
@@ -199,7 +203,7 @@ impl PeerEntryState {
                     Some(Ok(i)) => Some(i),
                     Some(Err(e)) => {
                         if let Ok(i) = local_addr.parse() {
-                            Some(SocketAddr::new(DEFAULT_SOCKET_ADDR.ip(), i))
+                            Some(addr!(LOCAL_IP:i))
                         } else {
                             eprintln!("Invalid local address {local_addr}: {e}");
                             return;

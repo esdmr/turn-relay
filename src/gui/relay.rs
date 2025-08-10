@@ -8,9 +8,9 @@ use tokio::sync::broadcast;
 
 use crate::{
     gui::peer::{PeerEntryMessage, PeerEntryState},
-    macros::{get_mut, take_value},
+    macros::{addr, get_mut, take_value},
     worker::CommandMessage,
-    DEFAULT_FWD_SOCKET_ADDR,
+    LOCAL_IP,
 };
 
 #[derive(Debug, Clone)]
@@ -149,7 +149,7 @@ impl RelayState {
                     Ok(addr) => addr,
                     Err(e) => {
                         if let Ok(i) = fwd_addr.parse() {
-                            SocketAddr::new(DEFAULT_FWD_SOCKET_ADDR.ip(), i)
+                            addr!(LOCAL_IP:i)
                         } else {
                             eprintln!("Invalid forward address {fwd_addr}: {e}");
                             return;

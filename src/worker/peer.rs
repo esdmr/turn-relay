@@ -15,7 +15,7 @@ use crate::worker::types::{
     CommandMessage, DataMessage, ServiceMessage, ToAnyhowResult, ToWorkerErr, WorkerErr, WorkerOk,
     WorkerResult, WorkerResultHelper,
 };
-use crate::DEFAULT_SOCKET_ADDR;
+use crate::LOCAL_DYN_SOCKET;
 
 #[derive(Debug)]
 pub struct PeerWorker {
@@ -49,12 +49,12 @@ impl PeerWorker {
             command_rcv,
             service_snd,
             socket: None,
-            local_addr: DEFAULT_SOCKET_ADDR,
+            local_addr: LOCAL_DYN_SOCKET,
         }
     }
 
     async fn setup_socket(&mut self) -> anyhow::Result<()> {
-        let socket = UdpSocket::bind(self.pinned_addr.unwrap_or(DEFAULT_SOCKET_ADDR)).await?;
+        let socket = UdpSocket::bind(self.pinned_addr.unwrap_or(LOCAL_DYN_SOCKET)).await?;
 
         self.local_addr = socket.local_addr()?;
         self.socket = Some(UdpFramed::new(socket, BytesCodec::new()));

@@ -14,7 +14,7 @@ use crate::worker::types::{
     CommandMessage, DataMessage, MaybeTurnClient, ServiceMessage, ToAnyhowResult, ToWorkerErr,
     WorkerErr, WorkerErrHelper, WorkerOk, WorkerResult, WorkerResultHelper,
 };
-use crate::DEFAULT_SOCKET_ADDR;
+use crate::ALL_DYN_SOCKET;
 
 #[derive(Debug)]
 pub struct RelayWorker {
@@ -213,7 +213,7 @@ impl RelayWorker {
 
                 self.client.0 = Some(
                     TurnClientBuilder::new(server, username, password).build_and_send_request(
-                        UdpSocket::bind(DEFAULT_SOCKET_ADDR)
+                        UdpSocket::bind(ALL_DYN_SOCKET)
                             .await
                             .anyhow()
                             .catch_async(|e| self.signal_connection_error(format!("{e}")))

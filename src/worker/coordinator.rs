@@ -2,6 +2,7 @@ use std::mem::take;
 use std::{collections::HashMap, net::SocketAddr};
 
 use crate::worker::types::{CommandMessage, ServiceMessage};
+use crate::DEFAULT_FWD_SOCKET;
 use futures::channel::mpsc;
 use futures::future::join_all;
 use tokio::sync::broadcast::{self, error::RecvError};
@@ -10,10 +11,7 @@ use tokio::task::JoinHandle;
 use crate::worker::types::{
     ToAnyhowResult, ToWorkerErr, WorkerErr, WorkerOk, WorkerResult, WorkerResultHelper,
 };
-use crate::{
-    worker::{peer::PeerWorker, relay::RelayWorker, types::DataMessage},
-    DEFAULT_FWD_SOCKET_ADDR,
-};
+use crate::worker::{peer::PeerWorker, relay::RelayWorker, types::DataMessage};
 
 pub const DATA_CHANNEL_CAPACITY: usize = u8::MAX as usize;
 pub const SERVICE_CHANNEL_CAPACITY: usize = u8::MAX as usize;
@@ -61,7 +59,7 @@ where
             downstream_snd,
             relay,
             peers: HashMap::new(),
-            fwd_addr: DEFAULT_FWD_SOCKET_ADDR,
+            fwd_addr: DEFAULT_FWD_SOCKET,
         }
     }
 
