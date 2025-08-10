@@ -55,22 +55,6 @@ impl PeerLocalState {
         self.assign(local_addr);
         self
     }
-
-    fn pin(&mut self, pinned_addr: SocketAddr) {
-        match &self {
-            Self::Unbound(_) => {
-                *self = Self::Unbound(Some(pinned_addr));
-            }
-            Self::Bound(addr, _) => {
-                *self = Self::Bound(pinned_addr, *addr == pinned_addr);
-            }
-        }
-    }
-
-    fn with_pin(mut self, pinned_addr: SocketAddr) -> Self {
-        self.pin(pinned_addr);
-        self
-    }
 }
 
 #[derive(Debug, Clone)]
