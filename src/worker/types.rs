@@ -178,7 +178,7 @@ impl MaybeTurnClient {
         } else {
             loop {
                 pending!();
-                eprintln!("Relay warning: Client was polled again but it is not connected yet.");
+                eprintln!("Relay: Warning: Client was polled again but it is not connected yet");
             }
         }
     }

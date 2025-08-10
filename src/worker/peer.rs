@@ -12,7 +12,8 @@ use tokio_util::codec::BytesCodec;
 use tokio_util::udp::UdpFramed;
 
 use crate::worker::types::{
-    CommandMessage, DataMessage, ServiceMessage, ToAnyhowResult, ToWorkerErr, WorkerErr, WorkerOk, WorkerResult, WorkerResultHelper
+    CommandMessage, DataMessage, ServiceMessage, ToAnyhowResult, ToWorkerErr, WorkerErr, WorkerOk,
+    WorkerResult, WorkerResultHelper,
 };
 use crate::DEFAULT_SOCKET_ADDR;
 
@@ -86,13 +87,11 @@ impl PeerWorker {
                 WorkerResult::continued()
             }
 
-            Some(Err(e)) => {
-                Err(e).anyhow().as_recoverable()?;
-
-                WorkerResult::continued()
-            }
+            Some(Err(e)) => Err(e).anyhow().as_recoverable(),
 
             None => {
+                eprintln!("Peer {}: Warning: Socket {} is closed", self.peer_addr, self.local_addr);
+
                 self.service_snd
                     .send(ServiceMessage::PeerUnbound(self.peer_addr))
                     .await
@@ -136,26 +135,37 @@ impl PeerWorker {
         use CommandMessage::*;
 
         match command_message.anyhow().as_recoverable()? {
-            ConnectRelay {..} => WorkerResult::continued(),
-            ConnectPeer {..} => WorkerResult::continued(),
+            ConnectRelay { .. } => WorkerResult::continued(),
+            ConnectPeer { .. } => WorkerResult::continued(),
             ChangeFwdAddr(i) => {
+                println!("Peer {} <> {} <> {}", self.peer_addr, self.local_addr, i);
                 self.fwd_addr = i;
                 WorkerResult::continued()
-            },
+            }
             DisconnectAll | TerminateAll => {
                 self.socket = None;
-                self.service_snd.send(ServiceMessage::PeerUnbound(self.peer_addr)).await.anyhow().as_unrecoverable()?;
+
+                self.service_snd
+                    .send(ServiceMessage::PeerUnbound(self.peer_addr))
+                    .await
+                    .anyhow()
+                    .as_unrecoverable()?;
+
                 WorkerResult::terminate()
-            },
+            }
             DisconnectPeer(i) => {
                 if self.peer_addr == i {
                     self.socket = None;
-                    self.service_snd.send(ServiceMessage::PeerUnbound(self.peer_addr)).await.anyhow().as_unrecoverable()?;
+                    self.service_snd
+                        .send(ServiceMessage::PeerUnbound(self.peer_addr))
+                        .await
+                        .anyhow()
+                        .as_unrecoverable()?;
                     WorkerResult::terminate()
                 } else {
                     WorkerResult::continued()
                 }
-            },
+            }
         }
     }
 
@@ -175,7 +185,10 @@ impl PeerWorker {
 
     pub async fn start(mut self) {
         if let Err(error) = self.setup_socket().await {
-            eprintln!("Peer {}: Failed to bind: {}", self.peer_addr, error);
+            eprintln!(
+                "Peer {} <> {:?}: Failed to bind: {}",
+                self.peer_addr, self.pinned_addr, error
+            );
 
             let _ = self
                 .service_snd
@@ -185,23 +198,25 @@ impl PeerWorker {
             return;
         }
 
-        eprintln!("Peer {}: Worker started", self.peer_addr);
-
+        println!(
+            "Peer {} <> {} <> {}: Worker started",
+            self.peer_addr, self.local_addr, self.fwd_addr
+        );
 
         loop {
             match self.handle_loop().await {
-                Ok(WorkerOk::Continue) => {},
+                Ok(WorkerOk::Continue) => {}
                 Ok(WorkerOk::Terminate) => break,
                 Err(WorkerErr::RecoverableError(error)) => {
                     eprintln!("Peer {}: Error: {}", self.peer_addr, error);
-                },
+                }
                 Err(WorkerErr::UnrecoverableError(error)) => {
                     eprintln!("Peer {}: Fatal: {}", self.peer_addr, error);
                     break;
-                },
+                }
             }
         }
 
-        eprintln!("Peer {}: Worker stopped", self.peer_addr);
+        println!("Peer {}: Worker stopped", self.peer_addr);
     }
 }

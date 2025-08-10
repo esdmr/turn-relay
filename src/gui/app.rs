@@ -1,8 +1,7 @@
 use crate::gui::peer::PeerEntryMessage;
 use crate::gui::relay::{RelayMessage, RelayState};
 use crate::worker::{
-    handle_coordinator, CommandMessage, ServiceMessage, COMMAND_CHANNEL_CAPACITY,
-    SERVICE_CHANNEL_CAPACITY,
+    run_worker, CommandMessage, ServiceMessage, COMMAND_CHANNEL_CAPACITY, SERVICE_CHANNEL_CAPACITY,
 };
 
 use iced::{Element, Subscription};
@@ -37,10 +36,8 @@ impl App {
 
         Subscription::<ServiceMessage>::run_with_id(
             (),
-            iced::stream::channel(SERVICE_CHANNEL_CAPACITY, move |service_snd| async move {
-                handle_coordinator(|| command_snd.subscribe(), service_snd)
-                    .await
-                    .unwrap();
+            iced::stream::channel(SERVICE_CHANNEL_CAPACITY, move |service_snd| {
+                run_worker(move || command_snd.subscribe(), service_snd)
             }),
         )
         .map(|i| {

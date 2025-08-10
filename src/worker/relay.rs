@@ -54,6 +54,8 @@ impl RelayWorker {
 
         match turn_message {
             Some(Ok(AllocationGranted { relay_address, .. })) => {
+                println!("Relay: Available at {}", relay_address);
+
                 self.service_snd
                     .send(ServiceMessage::RelayAllocated(relay_address))
                     .await
@@ -73,6 +75,8 @@ impl RelayWorker {
             }
 
             Some(Ok(RedirectedToAlternateServer(new_addr))) => {
+                println!("Relay: Redirected to {}", new_addr);
+
                 self.service_snd
                     .send(ServiceMessage::RelayRedirected(new_addr))
                     .await
@@ -83,6 +87,8 @@ impl RelayWorker {
             }
 
             Some(Ok(PermissionCreated(peer_addr))) => {
+                println!("Relay: Granted send permission to {}", peer_addr);
+
                 self.granted_peers.insert(format!("{}", peer_addr));
 
                 self.service_snd
@@ -95,6 +101,8 @@ impl RelayWorker {
             }
 
             Some(Ok(PermissionNotCreated(peer_addr))) => {
+                println!("Relay: Denied send permission to {}", peer_addr);
+
                 self.service_snd
                     .send(ServiceMessage::RelayPeerDenied(peer_addr))
                     .await
@@ -105,6 +113,8 @@ impl RelayWorker {
             }
 
             Some(Ok(Disconnected)) => {
+                println!("Relay: Disconnected");
+
                 self.service_snd
                     .send(ServiceMessage::RelayDisconnected)
                     .await
@@ -115,13 +125,25 @@ impl RelayWorker {
             }
 
             Some(Ok(APacketIsReceivedAndAutomaticallyHandled)) => WorkerResult::continued(),
-            Some(Ok(ForeignPacket(..))) => WorkerResult::continued(),
-            Some(Ok(NetworkChange)) => WorkerResult::continued(),
+            Some(Ok(ForeignPacket(_src, _))) => {
+                #[cfg(debug_assertions)]
+                eprintln!("Relay: Warning: Ignoring an invalid packet from {}", _src);
+
+                WorkerResult::continued()
+            },
+            Some(Ok(NetworkChange)) => {
+                eprintln!("Relay: Warning: Network changed");
+
+                WorkerResult::continued()
+            },
             Some(Err(e)) => Err(e).as_recoverable(),
 
             None => {
                 self.client.0 = None;
                 self.granted_peers.clear();
+
+                println!("Relay: Disconnected");
+
                 WorkerResult::terminate_if(self.will_terminate)
             }
         }
@@ -155,22 +177,6 @@ impl RelayWorker {
         WorkerResult::continued()
     }
 
-    async fn signal_authorization_failure(
-        &mut self,
-        peer_addr: SocketAddr,
-        error: String,
-    ) -> WorkerResult {
-        eprintln!("Relay: Failed to authorize {}: {}", peer_addr, error);
-
-        self.service_snd
-            .send(ServiceMessage::RelayPeerDenied(peer_addr))
-            .await
-            .anyhow()
-            .as_recoverable()?;
-
-        WorkerResult::continued()
-    }
-
     async fn handle_command_message(
         &mut self,
         command_message: Result<CommandMessage, broadcast::error::RecvError>,
@@ -183,7 +189,7 @@ impl RelayWorker {
                 username,
                 password,
             } => {
-                assert!(self.client.0.is_none(), "Connect message received while relay is already connected. GUI is malfunctioning.");
+                assert!(self.client.0.is_none(), "Connect message received while relay is already connected; GUI is malfunctioning");
 
                 let server = if server.contains(':') {
                     server.to_socket_addrs()
@@ -208,6 +214,8 @@ impl RelayWorker {
                     ),
                 );
 
+                println!("Relay: Connected to {}; Waiting for allocation", server);
+
                 WorkerResult::continued()
             }
 
@@ -217,24 +225,27 @@ impl RelayWorker {
             } => {
                 if let Some(client) = &mut self.client.0 {
                     if self.granted_peers.contains(&format!("{}", peer_addr)) {
+                        println!("Relay: Send permission for {} was already granted", peer_addr);
+
                         self.service_snd
                             .send(ServiceMessage::RelayPeerGranted(peer_addr))
                             .await
                             .anyhow()
                             .as_recoverable()?;
                     } else {
+                        println!("Relay: Requesting send permission for {}", peer_addr);
+
                         client
                             .send(MessageToTurnServer::AddPermission(
                                 peer_addr,
                                 ChannelUsage::WithChannel,
                             ))
                             .await
-                            .catch_async(|e| {
-                                self.signal_authorization_failure(peer_addr, format!("{}", e))
-                            })
-                            .await?;
+                            .as_recoverable()?;
                     }
                 } else {
+                    eprintln!("Relay: Warning: Ignoring permission request while client is not connected yet");
+
                     self.service_snd
                         .send(ServiceMessage::RelayDisconnected)
                         .await
@@ -247,6 +258,8 @@ impl RelayWorker {
 
             DisconnectAll => {
                 if let Some(client) = &mut self.client.0 {
+                    println!("Relay: Disconnecting");
+
                     client
                         .send(MessageToTurnServer::Disconnect)
                         .await
@@ -260,6 +273,8 @@ impl RelayWorker {
                 self.will_terminate = true;
 
                 if let Some(client) = &mut self.client.0 {
+                    println!("Relay: Disconnecting");
+
                     client
                         .send(MessageToTurnServer::Disconnect)
                         .await
