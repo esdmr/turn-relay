@@ -5,6 +5,7 @@ use crate::worker::types::{CommandMessage, ServiceMessage};
 use crate::DEFAULT_FWD_SOCKET;
 use futures::channel::mpsc;
 use futures::future::join_all;
+use futures::SinkExt;
 use tokio::sync::broadcast::{self, error::RecvError};
 use tokio::task::JoinHandle;
 
@@ -125,6 +126,12 @@ where
                     eprintln!(
                         "Coordinator: Warning: Could not find peer {peer_addr} to disconnect"
                     );
+
+                    self.service_snd
+                        .send(ServiceMessage::PeerUnbound(peer_addr))
+                        .await
+                        .anyhow()
+                        .into_recoverable()?;
                 }
 
                 WorkerResult::continued()
