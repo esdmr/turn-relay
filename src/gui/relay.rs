@@ -1,9 +1,7 @@
 use std::net::SocketAddr;
 
 use iced::{
-    clipboard,
-    widget::{button, column, row, text, text_input, Column},
-    Element, Task,
+    clipboard, widget::{button, column, horizontal_space, row, text, text_input, vertical_space, Column}, Element, Task
 };
 use tokio::sync::broadcast;
 
@@ -318,29 +316,38 @@ impl RelayState {
                 password,
             } => column![
                 row![
-                    text!("Server: "),
+                    text!("Server").width(96),
+                    horizontal_space().width(8),
                     text_input("example.com:12345", server).on_input(UpdateServer),
                 ],
+                vertical_space().height(8),
                 row![
-                    text!("Username: "),
+                    text!("Username").width(96),
+                    horizontal_space().width(8),
                     text_input("12345:user", username).on_input(UpdateUsername),
                 ],
+                vertical_space().height(8),
                 row![
-                    text!("Password: "),
+                    text!("Password").width(96),
+                    horizontal_space().width(8),
                     text_input("abc123", password).on_input(UpdatePassword),
                 ],
+                vertical_space().height(24),
                 button(text!("Connect")).on_press(Connect),
             ],
             Self::Connecting { server: _ } => {
                 column![
                     text!("Connecting..."),
+                    vertical_space().height(24),
                     button(text!("Cancel")).on_press(Disconnect),
                 ]
             }
             Self::ConnectionFailed { server, why } => {
                 column![
                     text!("Connection to {} failed.", server),
+                    vertical_space().height(8),
                     text!("{}", why),
+                    vertical_space().height(24),
                     button(text!("Back")).on_press(Disconnect),
                 ]
             }
@@ -351,23 +358,36 @@ impl RelayState {
                 peers,
             } => column![
                 row![
-                    text!("Available at {}.", relay_addr),
+                    text!("Available at").width(96),
+                    horizontal_space().width(8),
+                    text_input("", format!("{relay_addr}").as_ref()),
+                    horizontal_space().width(8),
                     button(text!("Copy")).on_press(CopyRelayAddr),
+                    horizontal_space().width(8),
                     button(text!("Disconnect")).on_press(Disconnect),
                 ],
+                vertical_space().height(8),
                 row![
-                    text!("Forward to "),
+                    text!("Forward to").width(96),
+                    horizontal_space().width(8),
                     text_input("127.0.0.1:12345", fwd_addr).on_input(UpdateFwdAddr),
+                    horizontal_space().width(8),
                     button(text!("Apply")).on_press(ChangeFwdAddr),
                 ],
+                vertical_space().height(24),
                 row![
-                    text!("Peers"),
+                    text!("Peers").width(48),
+                    horizontal_space().width(8),
                     button(text!("Add")).on_press_maybe(
                         peers.iter().all(|i| !i.is_uncommitted()).then_some(AddPeer)
                     ),
                 ],
                 column(peers.iter().enumerate().map(|(index, peer)| {
-                    Element::from(peer.view(index)).map(move |i| Peer(index, i))
+                    column![
+                        vertical_space().height(8),
+                        Element::from(peer.view(index)).map(move |i| Peer(index, i)),
+                    ]
+                    .into()
                 })),
             ],
         }

@@ -1,6 +1,6 @@
 use std::{fmt::Display, net::SocketAddr, ops::Not};
 
-use iced::{widget::{button, row, text, text_input, Row}, Task};
+use iced::{widget::{button, horizontal_space, row, text, text_input, Row}, Task};
 use tokio::sync::broadcast;
 
 use crate::{
@@ -132,11 +132,6 @@ impl PeerEntryState {
                 command_snd
                     .send(CommandMessage::DisconnectPeer(*peer_addr))
                     .unwrap();
-
-                *self = Self::EditingLocal {
-                    peer_addr: *peer_addr,
-                    local_addr: String::default(),
-                }
             }
             (_, Delete) => {
                 unreachable!("invalid message: {:?} @ {:?}", Delete, self)
@@ -387,18 +382,23 @@ impl PeerEntryState {
                 peer_addr,
                 local_addr,
             } => row![
-                text!("{: <1$} ", "", index.to_string().len()),
+                horizontal_space().width(48 + 8),
                 text_input("123.45.67.89:12345", peer_addr).on_input(UpdatePeer),
+                horizontal_space().width(8),
                 text_input("127.0.0.1:12345", local_addr).on_input(UpdateLocal),
+                horizontal_space().width(8),
                 button(text!("+")).on_press(Setup),
             ],
             Self::EditingLocal {
                 peer_addr,
                 local_addr,
             } => row![
-                text!("{})", index),
-                text!("{}", peer_addr),
+                text!("{})", index).width(48),
+                horizontal_space().width(8),
+                text_input("", format!("{}", peer_addr).as_ref()),
+                horizontal_space().width(8),
                 text_input("127.0.0.1:12345", local_addr).on_input(UpdateLocal),
+                horizontal_space().width(8),
                 button(text!("+")).on_press(Setup),
             ],
             Self::Waiting {
@@ -406,13 +406,16 @@ impl PeerEntryState {
                 local_addr,
                 authorized,
             } => row![
-                text!("{})", index),
-                text!("{}", peer_addr),
+                text!("{})", index).width(48),
+                horizontal_space().width(8),
+                text_input("", format!("{}", peer_addr).as_ref()),
+                horizontal_space().width(8),
                 match (local_addr, authorized) {
                     (PeerLocalState::Bound(_, _), false) => text!("Authorizing..."),
                     (PeerLocalState::Unbound(_), true) => text!("Binding..."),
                     _ => text!("Waiting..."),
                 },
+                horizontal_space().width(8),
                 button(text!("X")).on_press(Delete),
             ],
             Self::Failed {
@@ -420,22 +423,28 @@ impl PeerEntryState {
                 local_addr: _,
                 authorized,
             } => row![
-                text!("{})", index),
-                text!("{}", peer_addr),
+                text!("{})", index).width(48),
+                horizontal_space().width(8),
+                text_input("", format!("{}", peer_addr).as_ref()),
+                horizontal_space().width(8),
                 if *authorized {
                     text!("Binding Failed")
                 } else {
                     text!("Authorization Failed")
                 },
+                horizontal_space().width(8),
                 button(text!("X")).on_press(Delete),
             ],
             Self::Ready {
                 peer_addr,
                 local_addr,
             } => row![
-                text!("{})", index),
-                text!("{}", peer_addr),
-                text!("{}", local_addr),
+                text!("{})", index).width(48),
+                horizontal_space().width(8),
+                text_input("", format!("{}", peer_addr).as_ref()),
+                horizontal_space().width(8),
+                text_input("", format!("{}", local_addr).as_ref()),
+                horizontal_space().width(8),
                 button(text!("X")).on_press(Delete),
             ],
         }
