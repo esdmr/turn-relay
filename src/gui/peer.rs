@@ -2,7 +2,7 @@ use std::{fmt::Display, net::SocketAddr, ops::Not};
 
 use iced::{
     widget::{button, horizontal_space, row, text, text_input, Row},
-    Task,
+    Length, Task,
 };
 use tokio::sync::broadcast;
 
@@ -428,7 +428,8 @@ impl PeerEntryState {
                     (PeerLocalState::Bound(_, _), false) => text!("Authorizing..."),
                     (PeerLocalState::Unbound(_), true) => text!("Binding..."),
                     _ => text!("Waiting..."),
-                },
+                }
+                .width(Length::Fill),
                 horizontal_space().width(8),
                 button(text!("X")).on_press(Delete),
             ],
@@ -445,7 +446,8 @@ impl PeerEntryState {
                     text!("Binding Failed")
                 } else {
                     text!("Authorization Failed")
-                },
+                }
+                .width(Length::Fill),
                 horizontal_space().width(8),
                 button(text!("X")).on_press(Delete),
             ],
