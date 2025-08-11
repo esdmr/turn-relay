@@ -100,12 +100,12 @@ impl Default for PeerEntryState {
 }
 
 impl PeerEntryState {
-    pub fn compare_peer(&self, other_peer_addr: &SocketAddr) -> bool {
+    pub fn compare_peer(&self, other_peer_addr: SocketAddr) -> bool {
         match self {
             Self::EditingLocal { peer_addr, .. }
             | Self::Waiting { peer_addr, .. }
             | Self::Failed { peer_addr, .. }
-            | Self::Ready { peer_addr, .. } => *peer_addr == *other_peer_addr,
+            | Self::Ready { peer_addr, .. } => *peer_addr == other_peer_addr,
             Self::EditingPeer { .. } => false,
         }
     }
@@ -119,6 +119,7 @@ impl PeerEntryState {
         &mut self,
         message: PeerEntryMessage,
         command_snd: &broadcast::Sender<CommandMessage>,
+        relay_addr: SocketAddr,
     ) -> Task<PeerEntryMessage> {
         use PeerEntryMessage::{
             Delete, OnBindFailed, OnBound, OnPermissionDenied, OnPermissionGranted, OnUnbound,
@@ -149,8 +150,12 @@ impl PeerEntryState {
                 let peer_addr = match peer_addr.parse::<SocketAddr>() {
                     Ok(i) => i,
                     Err(e) => {
-                        eprintln!("Invalid peer address {peer_addr}: {e}");
-                        return Task::none();
+                        if let Ok(i) = peer_addr.parse() {
+                            addr!((relay_addr.ip()):i)
+                        } else {
+                            eprintln!("Invalid peer address {peer_addr}: {e}");
+                            return Task::none();
+                        }
                     }
                 };
 
@@ -386,9 +391,13 @@ impl PeerEntryState {
                 local_addr,
             } => row![
                 horizontal_space().width(48 + 8),
-                text_input("123.45.67.89:12345", peer_addr).on_input(UpdatePeer),
+                text_input("123.45.67.89:12345", peer_addr)
+                    .on_input(UpdatePeer)
+                    .on_submit(Setup),
                 horizontal_space().width(8),
-                text_input("127.0.0.1:12345", local_addr).on_input(UpdateLocal),
+                text_input("127.0.0.1:12345", local_addr)
+                    .on_input(UpdateLocal)
+                    .on_submit(Setup),
                 horizontal_space().width(8),
                 button(text!("+")).on_press(Setup),
             ],
@@ -400,7 +409,9 @@ impl PeerEntryState {
                 horizontal_space().width(8),
                 text_input("", format!("{peer_addr}").as_ref()),
                 horizontal_space().width(8),
-                text_input("127.0.0.1:12345", local_addr).on_input(UpdateLocal),
+                text_input("127.0.0.1:12345", local_addr)
+                    .on_input(UpdateLocal)
+                    .on_submit(Setup),
                 horizontal_space().width(8),
                 button(text!("+")).on_press(Setup),
             ],

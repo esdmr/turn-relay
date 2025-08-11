@@ -265,9 +265,11 @@ impl RelayState {
                 };
             }
 
-            (Self::Connected { .. }, Peer(index, sub_message)) => {
+            (Self::Connected { relay_addr, .. }, Peer(index, sub_message)) => {
+                let relay_addr = *relay_addr;
+
                 return get_mut!(Self::Connected => self.peers)[index]
-                    .update(sub_message, command_snd)
+                    .update(sub_message, command_snd, relay_addr)
                     .map(move |i| RelayMessage::Peer(index, i));
             }
             (_, Peer(index, sub_message)) => {
@@ -278,14 +280,16 @@ impl RelayState {
                 )
             }
 
-            (Self::Connected { .. }, OnPeer(peer_addr, sub_message)) => {
+            (Self::Connected { relay_addr, .. }, OnPeer(peer_addr, sub_message)) => {
+                let relay_addr = *relay_addr;
+
                 if let Some((index, peer)) = get_mut!(Self::Connected => self.peers)
                     .iter_mut()
                     .enumerate()
-                    .find(|(_, i)| i.compare_peer(&peer_addr))
+                    .find(|(_, i)| i.compare_peer(peer_addr))
                 {
                     return peer
-                        .update(sub_message, command_snd)
+                        .update(sub_message, command_snd, relay_addr)
                         .map(move |i| RelayMessage::Peer(index, i));
                 }
 
@@ -334,7 +338,9 @@ impl RelayState {
                 row![
                     text!("Password").width(96),
                     horizontal_space().width(8),
-                    text_input("abc123", password).on_input(UpdatePassword),
+                    text_input("abc123", password)
+                        .on_input(UpdatePassword)
+                        .on_submit(Connect),
                 ],
                 vertical_space().height(24),
                 button(text!("Connect")).on_press(Connect),
@@ -374,7 +380,9 @@ impl RelayState {
                 row![
                     text!("Forward to").width(96),
                     horizontal_space().width(8),
-                    text_input("127.0.0.1:12345", fwd_addr).on_input(UpdateFwdAddr),
+                    text_input("127.0.0.1:12345", fwd_addr)
+                        .on_input(UpdateFwdAddr)
+                        .on_submit(ChangeFwdAddr),
                     horizontal_space().width(8),
                     button(text!("Apply")).on_press(ChangeFwdAddr),
                 ],
