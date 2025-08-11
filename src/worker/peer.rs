@@ -1,6 +1,7 @@
 use std::io;
 use std::net::SocketAddr;
 
+use anyhow::{anyhow, ensure};
 use bytes::{Bytes, BytesMut};
 use futures::channel::mpsc;
 use futures::{SinkExt, StreamExt};
@@ -57,6 +58,8 @@ impl PeerWorker {
         let socket = UdpSocket::bind(self.pinned_addr.unwrap_or(LOCAL_DYN_SOCKET)).await?;
 
         self.local_addr = socket.local_addr()?;
+        ensure!(self.local_addr != self.fwd_addr, "Refusing to bind to the forward address");
+
         self.socket = Some(UdpFramed::new(socket, BytesCodec::new()));
 
         self.service_snd
@@ -145,8 +148,13 @@ impl PeerWorker {
             ConnectRelay { .. } | ConnectPeer { .. } => WorkerResult::continued(),
 
             ChangeFwdAddr(i) => {
-                println!("Peer {} <> {} <> {}", self.peer_addr, self.local_addr, i);
                 self.fwd_addr = i;
+
+                if self.local_addr == self.fwd_addr {
+                    Err(anyhow!("Refusing to bind to the forward address")).into_unrecoverable()?;
+                }
+
+                println!("Peer {} <> {} <> {}", self.peer_addr, self.local_addr, i);
                 WorkerResult::continued()
             }
 
