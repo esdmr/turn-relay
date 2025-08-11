@@ -133,17 +133,6 @@ where
             TerminateAll => {
                 println!("Coordinator: Terminating");
 
-                (&mut self.relay).await.anyhow().into_unrecoverable()?;
-
-                let peers = take(&mut self.peers);
-
-                join_all(peers.into_values())
-                    .await
-                    .into_iter()
-                    .collect::<Result<Vec<()>, _>>()
-                    .anyhow()
-                    .into_unrecoverable()?;
-
                 WorkerResult::terminate()
             }
         }
@@ -170,6 +159,16 @@ where
                 }
             }
         }
+
+        (&mut self.relay).await.unwrap();
+
+        let peers: HashMap<String, JoinHandle<()>> = take(&mut self.peers);
+
+        join_all(peers.into_values())
+            .await
+            .into_iter()
+            .collect::<Result<Vec<()>, _>>()
+            .unwrap();
 
         println!("Coordinator: Worker stopped");
     }

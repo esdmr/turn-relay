@@ -147,7 +147,7 @@ impl RelayWorker {
                 self.client.0 = None;
                 self.granted_peers.clear();
 
-                println!("Relay: Disconnected");
+                println!("Relay: Socket is closed");
 
                 WorkerResult::terminate_if(self.will_terminate)
             }
