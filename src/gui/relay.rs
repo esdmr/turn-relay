@@ -1,7 +1,11 @@
 use std::net::SocketAddr;
 
 use iced::{
-    clipboard, widget::{button, column, horizontal_space, row, text, text_input, vertical_space, Column}, Element, Task
+    clipboard,
+    widget::{
+        button, column, horizontal_space, row, scrollable, text, text_input, vertical_space, Column,
+    },
+    Element, Length, Task,
 };
 use tokio::sync::broadcast;
 
@@ -283,13 +287,13 @@ impl RelayState {
                     return peer
                         .update(sub_message, command_snd)
                         .map(move |i| RelayMessage::Peer(index, i));
-                } else {
-                    eprintln!(
-                        "non-existent peer ignored: {:?} @ {:?}",
-                        OnPeer(peer_addr, sub_message),
-                        self
-                    );
                 }
+
+                eprintln!(
+                    "non-existent peer ignored: {:?} @ {:?}",
+                    OnPeer(peer_addr, sub_message),
+                    self
+                );
             }
             (_, OnPeer(peer_addr, sub_message)) => {
                 eprintln!(
@@ -382,13 +386,15 @@ impl RelayState {
                         peers.iter().all(|i| !i.is_uncommitted()).then_some(AddPeer)
                     ),
                 ],
-                column(peers.iter().enumerate().map(|(index, peer)| {
+                vertical_space().height(8),
+                scrollable(column(peers.iter().enumerate().map(|(index, peer)| {
                     column![
-                        vertical_space().height(8),
+                        vertical_space().height(if index > 0 { 8 } else { 0 }),
                         Element::from(peer.view(index)).map(move |i| Peer(index, i)),
                     ]
                     .into()
-                })),
+                })),)
+                .height(Length::Fill),
             ],
         }
     }

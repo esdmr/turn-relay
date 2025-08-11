@@ -4,7 +4,7 @@ mod relay;
 
 use crate::gui::app::App;
 
-use iced::{application, window, Settings};
+use iced::{application, window, Settings, Size};
 
 pub fn run_gui() -> iced::Result {
     application("TURN Relay", App::update, App::view)
@@ -15,6 +15,7 @@ pub fn run_gui() -> iced::Result {
         })
         .window(window::Settings {
             exit_on_close_request: false,
+            min_size: Some(Size::new(456., 456.)),
             ..Default::default()
         })
         .run()

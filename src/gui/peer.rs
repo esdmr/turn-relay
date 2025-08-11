@@ -1,6 +1,9 @@
 use std::{fmt::Display, net::SocketAddr, ops::Not};
 
-use iced::{widget::{button, horizontal_space, row, text, text_input, Row}, Task};
+use iced::{
+    widget::{button, horizontal_space, row, text, text_input, Row},
+    Task,
+};
 use tokio::sync::broadcast;
 
 use crate::{
@@ -393,9 +396,9 @@ impl PeerEntryState {
                 peer_addr,
                 local_addr,
             } => row![
-                text!("{})", index).width(48),
+                text!("{})", index + 1).width(48),
                 horizontal_space().width(8),
-                text_input("", format!("{}", peer_addr).as_ref()),
+                text_input("", format!("{peer_addr}").as_ref()),
                 horizontal_space().width(8),
                 text_input("127.0.0.1:12345", local_addr).on_input(UpdateLocal),
                 horizontal_space().width(8),
@@ -406,9 +409,9 @@ impl PeerEntryState {
                 local_addr,
                 authorized,
             } => row![
-                text!("{})", index).width(48),
+                text!("{})", index + 1).width(48),
                 horizontal_space().width(8),
-                text_input("", format!("{}", peer_addr).as_ref()),
+                text_input("", format!("{peer_addr}").as_ref()),
                 horizontal_space().width(8),
                 match (local_addr, authorized) {
                     (PeerLocalState::Bound(_, _), false) => text!("Authorizing..."),
@@ -423,9 +426,9 @@ impl PeerEntryState {
                 local_addr: _,
                 authorized,
             } => row![
-                text!("{})", index).width(48),
+                text!("{})", index + 1).width(48),
                 horizontal_space().width(8),
-                text_input("", format!("{}", peer_addr).as_ref()),
+                text_input("", format!("{peer_addr}").as_ref()),
                 horizontal_space().width(8),
                 if *authorized {
                     text!("Binding Failed")
@@ -439,11 +442,11 @@ impl PeerEntryState {
                 peer_addr,
                 local_addr,
             } => row![
-                text!("{})", index).width(48),
+                text!("{})", index + 1).width(48),
                 horizontal_space().width(8),
-                text_input("", format!("{}", peer_addr).as_ref()),
+                text_input("", format!("{peer_addr}").as_ref()),
                 horizontal_space().width(8),
-                text_input("", format!("{}", local_addr).as_ref()),
+                text_input("", format!("{local_addr}").as_ref()),
                 horizontal_space().width(8),
                 button(text!("X")).on_press(Delete),
             ],

@@ -4,6 +4,7 @@ use crate::worker::{
     run_worker, CommandMessage, ServiceMessage, COMMAND_CHANNEL_CAPACITY, SERVICE_CHANNEL_CAPACITY,
 };
 
+use iced::widget::{center, container};
 use iced::window::{close, close_requests, Id};
 use iced::{Element, Subscription, Task};
 use tokio::sync::broadcast;
@@ -64,21 +65,22 @@ impl App {
 
                 println!("Got close event for window {id}; Disconnecting the relay");
 
-                self.command_snd
-                    .send(CommandMessage::TerminateAll)
-                    .unwrap();
+                self.command_snd.send(CommandMessage::TerminateAll).unwrap();
 
                 Task::none()
             }
 
-            AppMessage::Relay(sub_message) => {
-                self.state.update(sub_message, &self.command_snd).map(AppMessage::Relay)
-            }
+            AppMessage::Relay(sub_message) => self
+                .state
+                .update(sub_message, &self.command_snd)
+                .map(AppMessage::Relay),
         }
     }
 
     pub fn view(&self) -> Element<AppMessage> {
-        Element::from(self.state.view()).map(AppMessage::Relay)
+        center(container(Element::from(self.state.view()).map(AppMessage::Relay)).max_width(512))
+            .padding(8)
+            .into()
     }
 
     pub fn subscribe(&self) -> Subscription<AppMessage> {
@@ -87,13 +89,18 @@ impl App {
         Subscription::batch([
             Subscription::<ServiceMessage>::run_with_id(
                 (),
-                iced::stream::channel(SERVICE_CHANNEL_CAPACITY, move |service_snd: futures::channel::mpsc::Sender<ServiceMessage>| {
-                    run_worker(move || command_snd.subscribe(), service_snd)
-                }),
+                iced::stream::channel(
+                    SERVICE_CHANNEL_CAPACITY,
+                    move |service_snd: futures::channel::mpsc::Sender<ServiceMessage>| {
+                        run_worker(move || command_snd.subscribe(), service_snd)
+                    },
+                ),
             )
             .map(|i| {
                 use PeerEntryMessage as Peer;
-                use RelayMessage::{OnAllocate, OnConnectionFailed, OnDisconnect, OnPeer, OnRedirect};
+                use RelayMessage::{
+                    OnAllocate, OnConnectionFailed, OnDisconnect, OnPeer, OnRedirect,
+                };
                 use ServiceMessage::{
                     PeerBindFailed, PeerBound, PeerUnbound, RelayAllocated, RelayConnectionFailed,
                     RelayDisconnected, RelayPeerDenied, RelayPeerGranted, RelayRedirected,
