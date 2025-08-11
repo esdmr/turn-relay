@@ -117,7 +117,7 @@ impl RelayState {
             (Self::Disconnected { server, .. }, Connect) => {
                 command_snd
                     .send(CommandMessage::ConnectRelay {
-                        server: server.clone(),
+                        server: server.trim().to_string(),
                         username: take_value!(Self::Disconnected => self.username),
                         password: take_value!(Self::Disconnected => self.password),
                     })
@@ -151,6 +151,8 @@ impl RelayState {
             }
 
             (Self::Connected { fwd_addr, .. }, ChangeFwdAddr) => {
+                let fwd_addr = fwd_addr.trim();
+
                 let addr = match fwd_addr.parse() {
                     Ok(addr) => addr,
                     Err(e) => {

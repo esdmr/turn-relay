@@ -147,7 +147,9 @@ impl PeerEntryState {
                 },
                 Setup,
             ) => {
-                let peer_addr = match peer_addr.parse::<SocketAddr>() {
+                let peer_addr = peer_addr.trim();
+
+                let peer_addr = match peer_addr.parse() {
                     Ok(i) => i,
                     Err(e) => {
                         if let Ok(i) = peer_addr.parse() {
@@ -159,12 +161,9 @@ impl PeerEntryState {
                     }
                 };
 
-                let local_addr = match local_addr
-                    .trim()
-                    .is_empty()
-                    .not()
-                    .then(|| local_addr.parse::<SocketAddr>())
-                {
+                let local_addr = local_addr.trim();
+
+                let local_addr = match local_addr.is_empty().not().then(|| local_addr.parse()) {
                     Some(Ok(i)) => Some(i),
                     Some(Err(e)) => {
                         if let Ok(i) = local_addr.parse() {
@@ -197,8 +196,9 @@ impl PeerEntryState {
                 },
                 Setup,
             ) => {
+                let local_addr = local_addr.trim();
+
                 let local_addr = match local_addr
-                    .trim()
                     .is_empty()
                     .not()
                     .then(|| local_addr.parse::<SocketAddr>())

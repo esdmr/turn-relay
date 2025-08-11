@@ -58,7 +58,10 @@ impl PeerWorker {
         let socket = UdpSocket::bind(self.pinned_addr.unwrap_or(LOCAL_DYN_SOCKET)).await?;
 
         self.local_addr = socket.local_addr()?;
-        ensure!(self.local_addr != self.fwd_addr, "Refusing to bind to the forward address");
+        ensure!(
+            self.local_addr != self.fwd_addr,
+            "Refusing to bind to the forward address"
+        );
 
         self.socket = Some(UdpFramed::new(socket, BytesCodec::new()));
 
