@@ -42,7 +42,7 @@ impl IcedComponent for State {
     fn update(
         &mut self,
         message: Self::Message,
-        command_snd: Self::ExtraUpdateArgs<'_>,
+        _command_snd: Self::ExtraUpdateArgs<'_>,
     ) -> Task<Self::TaskMessage> {
         match message {
             Message::UpdateServer(i) => {
@@ -58,15 +58,11 @@ impl IcedComponent for State {
             }
 
             Message::Connect => {
-                command_snd
-                    .send(CommandMessage::ConnectRelay {
-                        server: self.server.trim().to_string(),
-                        username: take(&mut self.username),
-                        password: take(&mut self.password),
-                    })
-                    .unwrap();
-
-                return Task::done(super::Message::ToConnecting);
+                return Task::done(super::Message::ToConnecting {
+                    server: self.server.trim().to_string(),
+                    username: take(&mut self.username),
+                    password: take(&mut self.password),
+                });
             }
         }
 

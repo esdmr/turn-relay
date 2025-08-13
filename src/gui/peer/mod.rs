@@ -134,6 +134,13 @@ impl IcedComponent for State {
                 },
             ) => {
                 *self = Self::Waiting(waiting::State::new(peer_addr, pinned_addr));
+
+                command_snd
+                    .send(CommandMessage::ConnectPeer {
+                        peer_addr,
+                        local_addr: pinned_addr,
+                    })
+                    .unwrap();
             }
 
             (

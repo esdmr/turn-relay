@@ -21,7 +21,11 @@ pub enum Message {
     ForConnected(connected::Message),
     ForPeerByAddr(SocketAddr, peer::Message),
     ToDisconnected,
-    ToConnecting,
+    ToConnecting {
+        server: String,
+        username: String,
+        password: String,
+    },
     OnAllocated(SocketAddr),
     OnDisconnected,
     OnConnectionFailed(String),
@@ -81,8 +85,23 @@ impl IcedComponent for State {
     ) -> Task<Self::TaskMessage> {
         match (replace(self, Self::Intermediate), message) {
             // State transitions
-            (Self::Disconnected(disconnected::State { server, .. }), Message::ToConnecting) => {
-                *self = Self::Connecting(connecting::State::new(server));
+            (
+                Self::Disconnected(_),
+                Message::ToConnecting {
+                    server,
+                    username,
+                    password,
+                },
+            ) => {
+                *self = Self::Connecting(connecting::State::new(server.clone()));
+
+                command_snd
+                    .send(CommandMessage::ConnectRelay {
+                        server,
+                        username,
+                        password,
+                    })
+                    .unwrap();
             }
 
             (

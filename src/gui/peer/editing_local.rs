@@ -43,7 +43,7 @@ impl IcedComponent for State {
     fn update(
         &mut self,
         message: Self::Message,
-        (command_snd, _relay_addr): Self::ExtraUpdateArgs<'_>,
+        _extra: Self::ExtraUpdateArgs<'_>,
     ) -> Task<Self::TaskMessage> {
         match message {
             Message::UpdateLocal(i) => {
@@ -66,13 +66,6 @@ impl IcedComponent for State {
                         }
                         None => None,
                     };
-
-                command_snd
-                    .send(CommandMessage::ConnectPeer {
-                        peer_addr: self.peer_addr,
-                        local_addr,
-                    })
-                    .unwrap();
 
                 return Task::done(super::Message::ToWaiting {
                     peer_addr: self.peer_addr,
