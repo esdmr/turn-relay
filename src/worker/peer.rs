@@ -133,7 +133,7 @@ impl PeerWorker {
         WorkerResult::continued()
     }
 
-    async fn handle_command_message(
+    fn handle_command_message(
         &mut self,
         command_message: Result<CommandMessage, RecvError>,
     ) -> WorkerResult {
@@ -170,7 +170,7 @@ impl PeerWorker {
                 self.handle_relay_message(relay_message).await
             }
             command_message = self.command_rcv.recv() => {
-                self.handle_command_message(command_message).await
+                self.handle_command_message(command_message)
             }
         }
     }
