@@ -103,12 +103,6 @@ impl PeerWorker {
                     self.peer_addr, self.local_addr
                 );
 
-                self.service_snd
-                    .send(ServiceMessage::PeerUnbound(self.peer_addr))
-                    .await
-                    .anyhow()
-                    .into_unrecoverable()?;
-
                 WorkerResult::terminate()
             }
         }
@@ -160,30 +154,10 @@ impl PeerWorker {
             }
 
             CommandMessage::DisconnectAll | CommandMessage::TerminateAll => {
-                self.socket = None;
-
-                self.service_snd
-                    .send(ServiceMessage::PeerUnbound(self.peer_addr))
-                    .await
-                    .anyhow()
-                    .into_unrecoverable()?;
-
                 WorkerResult::terminate()
             }
 
-            CommandMessage::DisconnectPeer(i) => {
-                if self.peer_addr == i {
-                    self.socket = None;
-                    self.service_snd
-                        .send(ServiceMessage::PeerUnbound(self.peer_addr))
-                        .await
-                        .anyhow()
-                        .into_unrecoverable()?;
-                    WorkerResult::terminate()
-                } else {
-                    WorkerResult::continued()
-                }
-            }
+            CommandMessage::DisconnectPeer(i) => WorkerResult::terminate_if(self.peer_addr == i),
         }
     }
 
@@ -234,6 +208,11 @@ impl PeerWorker {
                 }
             }
         }
+
+        let _ = self
+            .service_snd
+            .send(ServiceMessage::PeerUnbound(self.peer_addr))
+            .await;
 
         println!("Peer {}: Worker stopped", self.peer_addr);
     }

@@ -19,6 +19,7 @@ pub enum Message {
     ForWaiting(waiting::Message),
     ForFailed(failed::Message),
     ForReady(ready::Message),
+    ToEditingLocal,
     ToWaiting {
         peer_addr: SocketAddr,
         pinned_addr: Option<SocketAddr>,
@@ -111,6 +112,20 @@ impl IcedComponent for State {
     ) -> Task<Self::TaskMessage> {
         match (replace(self, Self::Intermediate), message) {
             // State transitions
+            (
+                Self::Failed(failed::State {
+                    peer_addr,
+                    pinned_addr,
+                    ..
+                }),
+                Message::ToEditingLocal,
+            ) => {
+                *self = Self::EditingLocal(editing_local::State::new(
+                    peer_addr,
+                    pinned_addr.map_or_else(String::new, |i| format!("{i}")),
+                ));
+            }
+
             (
                 Self::EditingPeer(_) | Self::EditingLocal(_),
                 Message::ToWaiting {

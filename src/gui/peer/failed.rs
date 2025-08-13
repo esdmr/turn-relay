@@ -64,6 +64,10 @@ impl IcedComponent for State {
     ) -> Task<Self::TaskMessage> {
         match message {
             Message::Delete => {
+                if self.bind_failed {
+                    return Task::done(super::Message::ToEditingLocal);
+                }
+
                 command_snd
                     .send(CommandMessage::DisconnectPeer(self.peer_addr))
                     .unwrap();
