@@ -68,14 +68,10 @@ where
         &mut self,
         command_message: Result<CommandMessage, RecvError>,
     ) -> WorkerResult {
-        use CommandMessage::{
-            ChangeFwdAddr, ConnectPeer, ConnectRelay, DisconnectAll, DisconnectPeer, TerminateAll,
-        };
-
         match command_message.anyhow().into_recoverable()? {
-            ConnectRelay { .. } => WorkerResult::continued(),
+            CommandMessage::ConnectRelay { .. } => WorkerResult::continued(),
 
-            ConnectPeer {
+            CommandMessage::ConnectPeer {
                 peer_addr,
                 local_addr,
             } => {
@@ -98,13 +94,13 @@ where
                 WorkerResult::continued()
             }
 
-            ChangeFwdAddr(i) => {
+            CommandMessage::ChangeFwdAddr(i) => {
                 println!("Coordinator: New peers will forward to {i}");
                 self.fwd_addr = i;
                 WorkerResult::continued()
             }
 
-            DisconnectAll => {
+            CommandMessage::DisconnectAll => {
                 println!("Coordinator: Disconnecting everything");
 
                 let peers = take(&mut self.peers);
@@ -119,7 +115,7 @@ where
                 WorkerResult::continued()
             }
 
-            DisconnectPeer(peer_addr) => {
+            CommandMessage::DisconnectPeer(peer_addr) => {
                 if let Some(peer) = self.peers.remove(&peer_addr.to_string()) {
                     peer.await.anyhow().into_recoverable()?;
                 } else {
@@ -137,7 +133,7 @@ where
                 WorkerResult::continued()
             }
 
-            TerminateAll => {
+            CommandMessage::TerminateAll => {
                 println!("Coordinator: Terminating");
 
                 WorkerResult::terminate()

@@ -143,14 +143,12 @@ impl PeerWorker {
         &mut self,
         command_message: Result<CommandMessage, RecvError>,
     ) -> WorkerResult {
-        use CommandMessage::{
-            ChangeFwdAddr, ConnectPeer, ConnectRelay, DisconnectAll, DisconnectPeer, TerminateAll,
-        };
-
         match command_message.anyhow().into_recoverable()? {
-            ConnectRelay { .. } | ConnectPeer { .. } => WorkerResult::continued(),
+            CommandMessage::ConnectRelay { .. } | CommandMessage::ConnectPeer { .. } => {
+                WorkerResult::continued()
+            }
 
-            ChangeFwdAddr(i) => {
+            CommandMessage::ChangeFwdAddr(i) => {
                 self.fwd_addr = i;
 
                 if self.local_addr == self.fwd_addr {
@@ -161,7 +159,7 @@ impl PeerWorker {
                 WorkerResult::continued()
             }
 
-            DisconnectAll | TerminateAll => {
+            CommandMessage::DisconnectAll | CommandMessage::TerminateAll => {
                 self.socket = None;
 
                 self.service_snd
@@ -173,7 +171,7 @@ impl PeerWorker {
                 WorkerResult::terminate()
             }
 
-            DisconnectPeer(i) => {
+            CommandMessage::DisconnectPeer(i) => {
                 if self.peer_addr == i {
                     self.socket = None;
                     self.service_snd

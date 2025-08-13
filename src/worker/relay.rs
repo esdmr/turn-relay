@@ -49,14 +49,10 @@ impl RelayWorker {
         &mut self,
         turn_message: Option<Result<MessageFromTurnServer, anyhow::Error>>,
     ) -> WorkerResult {
-        use MessageFromTurnServer::{
-            APacketIsReceivedAndAutomaticallyHandled, AllocationGranted, Disconnected,
-            ForeignPacket, NetworkChange, PermissionCreated, PermissionNotCreated, RecvFrom,
-            RedirectedToAlternateServer,
-        };
+        use MessageFromTurnServer as M;
 
         match turn_message {
-            Some(Ok(AllocationGranted { relay_address, .. })) => {
+            Some(Ok(M::AllocationGranted { relay_address, .. })) => {
                 println!("Relay: Available at {relay_address}");
 
                 self.service_snd
@@ -68,7 +64,7 @@ impl RelayWorker {
                 WorkerResult::continued()
             }
 
-            Some(Ok(RecvFrom(src, data))) => {
+            Some(Ok(M::RecvFrom(src, data))) => {
                 self.downstream_snd
                     .send((src, data))
                     .anyhow()
@@ -77,7 +73,7 @@ impl RelayWorker {
                 WorkerResult::continued()
             }
 
-            Some(Ok(RedirectedToAlternateServer(new_addr))) => {
+            Some(Ok(M::RedirectedToAlternateServer(new_addr))) => {
                 println!("Relay: Redirected to {new_addr}");
 
                 self.service_snd
@@ -89,7 +85,7 @@ impl RelayWorker {
                 WorkerResult::continued()
             }
 
-            Some(Ok(PermissionCreated(peer_addr))) => {
+            Some(Ok(M::PermissionCreated(peer_addr))) => {
                 println!("Relay: Granted send permission to {peer_addr}");
 
                 self.granted_peers.insert(format!("{peer_addr}"));
@@ -103,7 +99,7 @@ impl RelayWorker {
                 WorkerResult::continued()
             }
 
-            Some(Ok(PermissionNotCreated(peer_addr))) => {
+            Some(Ok(M::PermissionNotCreated(peer_addr))) => {
                 println!("Relay: Denied send permission to {peer_addr}");
 
                 self.service_snd
@@ -115,7 +111,7 @@ impl RelayWorker {
                 WorkerResult::continued()
             }
 
-            Some(Ok(Disconnected)) => {
+            Some(Ok(M::Disconnected)) => {
                 println!("Relay: Disconnected");
 
                 self.service_snd
@@ -127,8 +123,9 @@ impl RelayWorker {
                 WorkerResult::continued()
             }
 
-            Some(Ok(APacketIsReceivedAndAutomaticallyHandled)) => WorkerResult::continued(),
-            Some(Ok(ForeignPacket(src, _))) => {
+            Some(Ok(M::APacketIsReceivedAndAutomaticallyHandled)) => WorkerResult::continued(),
+
+            Some(Ok(M::ForeignPacket(src, _))) => {
                 #[cfg(debug_assertions)]
                 eprintln!("Relay: Warning: Ignoring an invalid packet from {src}");
                 #[cfg(not(debug_assertions))]
@@ -136,11 +133,13 @@ impl RelayWorker {
 
                 WorkerResult::continued()
             }
-            Some(Ok(NetworkChange)) => {
+
+            Some(Ok(M::NetworkChange)) => {
                 eprintln!("Relay: Warning: Network changed");
 
                 WorkerResult::continued()
             }
+
             Some(Err(e)) => Err(e).into_recoverable(),
 
             None => {
@@ -186,12 +185,8 @@ impl RelayWorker {
         &mut self,
         command_message: Result<CommandMessage, broadcast::error::RecvError>,
     ) -> WorkerResult {
-        use CommandMessage::{
-            ChangeFwdAddr, ConnectPeer, ConnectRelay, DisconnectAll, DisconnectPeer, TerminateAll,
-        };
-
         match command_message.anyhow().into_recoverable()? {
-            ConnectRelay {
+            CommandMessage::ConnectRelay {
                 server,
                 username,
                 password,
@@ -226,10 +221,7 @@ impl RelayWorker {
                 WorkerResult::continued()
             }
 
-            ConnectPeer {
-                peer_addr,
-                local_addr: _,
-            } => {
+            CommandMessage::ConnectPeer { peer_addr, .. } => {
                 if let Some(client) = &mut self.client.0 {
                     if self.granted_peers.contains(&format!("{peer_addr}")) {
                         println!("Relay: Send permission for {peer_addr} was already granted");
@@ -263,7 +255,7 @@ impl RelayWorker {
                 WorkerResult::continued()
             }
 
-            DisconnectAll => {
+            CommandMessage::DisconnectAll => {
                 if let Some(client) = &mut self.client.0 {
                     println!("Relay: Disconnecting");
 
@@ -276,7 +268,7 @@ impl RelayWorker {
                 WorkerResult::continued()
             }
 
-            TerminateAll => {
+            CommandMessage::TerminateAll => {
                 self.will_terminate = true;
 
                 if let Some(client) = &mut self.client.0 {
@@ -291,7 +283,9 @@ impl RelayWorker {
                 WorkerResult::continued()
             }
 
-            ChangeFwdAddr(..) | DisconnectPeer(..) => WorkerResult::continued(),
+            CommandMessage::ChangeFwdAddr(..) | CommandMessage::DisconnectPeer(..) => {
+                WorkerResult::continued()
+            }
         }
     }
 
