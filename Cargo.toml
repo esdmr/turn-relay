@@ -21,7 +21,7 @@ turnclient = "0.5.0"
 
 [profile.release]
 lto = true
-opt-level = 2
+opt-level = 3
 
 [lints.clippy]
 all = { level = "warn", priority = -1 }
