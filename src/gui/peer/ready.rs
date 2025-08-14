@@ -6,11 +6,12 @@ use iced::{
 };
 use tokio::sync::broadcast;
 
-use crate::{gui::types::IcedComponent, worker::CommandMessage};
+use crate::{gui::{peer::waiting, types::IcedComponent}, worker::CommandMessage};
 
 #[derive(Debug, Clone)]
 pub enum Message {
     Delete,
+    OnBound(SocketAddr),
 }
 
 #[derive(Debug, Clone)]
@@ -20,16 +21,13 @@ pub struct State {
     pub pinned: bool,
 }
 
-impl State {
-    pub fn compare_peer(&self, other_peer_addr: SocketAddr) -> bool {
-        self.peer_addr == other_peer_addr
-    }
-
-    pub const fn new(peer_addr: SocketAddr, local_addr: SocketAddr, pinned: bool) -> Self {
+#[allow(clippy::fallible_impl_from)]
+impl From<waiting::State> for State {
+    fn from(value: waiting::State) -> Self {
         Self {
-            peer_addr,
-            local_addr,
-            pinned,
+            peer_addr: value.peer_addr,
+            local_addr: value.local_addr.bound_addr().unwrap(),
+            pinned: value.local_addr.is_pinned(),
         }
     }
 }
@@ -51,6 +49,11 @@ impl IcedComponent for State {
                 command_snd
                     .send(CommandMessage::DisconnectPeer(self.peer_addr))
                     .unwrap();
+            }
+
+            Message::OnBound(i) => {
+                self.pinned &= self.local_addr == i;
+                self.local_addr = i;
             }
         }
 

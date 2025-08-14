@@ -3,98 +3,102 @@ mod connecting;
 mod connection_failed;
 mod disconnected;
 
-use std::{mem::replace, net::SocketAddr};
+use std::net::SocketAddr;
 
-use iced::{Element, Task};
 use tokio::sync::broadcast;
 
 use crate::{
-    gui::{peer, types::IcedComponent},
+    gui::{macros::router_component, peer},
     worker::CommandMessage,
 };
 
-#[derive(Debug, Clone)]
-pub enum Message {
-    ForDisconnected(disconnected::Message),
-    ForConnecting(connecting::Message),
-    ForConnectionFailed(connection_failed::Message),
-    ForConnected(connected::Message),
-    ForPeerByAddr(SocketAddr, peer::Message),
-    ToDisconnected,
-    ToConnecting {
-        server: String,
-        username: String,
-        password: String,
-    },
-    OnAllocated(SocketAddr),
-    OnDisconnected,
-    OnConnectionFailed(String),
-    OnRedirect(SocketAddr),
-}
-
-impl From<disconnected::Message> for Message {
-    fn from(value: disconnected::Message) -> Self {
-        Self::ForDisconnected(value)
+router_component! {
+    message enum Message {
+        ForPeerByAddr(SocketAddr, peer::Message),
+        ForPeerByIndex(usize, peer::Message),
+        OnAllocated(SocketAddr),
+        OnConnectionFailed(String),
+        OnDisconnected,
+        OnRedirect(SocketAddr),
+        ToConnecting {
+            server: String,
+            username: String,
+            password: String,
+        },
+        ToDisconnected,
     }
-}
 
-impl From<connecting::Message> for Message {
-    fn from(value: connecting::Message) -> Self {
-        Self::ForConnecting(value)
+    state enum State {
+        Disconnected(disconnected::State),
+        Connecting(connecting::State),
+        ConnectionFailed(connection_failed::State),
+        Connected(connected::State),
     }
-}
 
-impl From<connection_failed::Message> for Message {
-    fn from(value: connection_failed::Message) -> Self {
-        Self::ForConnectionFailed(value)
-    }
-}
+    impl Default for Disconnected;
 
-impl From<connected::Message> for Message {
-    fn from(value: connected::Message) -> Self {
-        Self::ForConnected(value)
-    }
-}
-
-#[derive(Debug, Clone)]
-pub enum State {
-    Disconnected(disconnected::State),
-    Connecting(connecting::State),
-    ConnectionFailed(connection_failed::State),
-    Connected(connected::State),
-    Intermediate,
-}
-
-impl Default for State {
-    fn default() -> Self {
-        Self::Disconnected(disconnected::State::default())
-    }
-}
-
-impl IcedComponent for State {
-    type Message = Message;
-    type TaskMessage = Message;
     type ExtraUpdateArgs<'a> = &'a broadcast::Sender<CommandMessage>;
     type ExtraViewArgs<'a> = ();
     type ExtraSubscriptionArgs<'a> = ();
 
-    fn update(
-        &mut self,
-        message: Self::Message,
-        command_snd: Self::ExtraUpdateArgs<'_>,
-    ) -> Task<Self::TaskMessage> {
-        match (replace(self, Self::Intermediate), message) {
-            // State transitions
-            (
-                Self::Disconnected(_),
-                Message::ToConnecting {
-                    server,
-                    username,
-                    password,
-                },
-            ) => {
-                *self = Self::Connecting(connecting::State::new(server.clone()));
+    fn update(..) {
+        // ForPeerByAddr
+        given ForPeerByAddr ignore Disconnected;
+        given ForPeerByAddr ignore Connecting;
+        given ForPeerByAddr ignore ConnectionFailed;
 
+        given ForPeerByAddr(addr, message)
+            pass Connected(connected::Message::ForPeerByAddr(addr, message));
+
+        // ForPeerByIndex
+        given ForPeerByIndex ignore Disconnected;
+        given ForPeerByIndex ignore Connecting;
+        given ForPeerByIndex ignore ConnectionFailed;
+
+        given ForPeerByIndex(index, message)
+            pass Connected(connected::Message::ForPeerByIndex(index, message));
+
+        // OnAllocated
+        given OnAllocated ignore Disconnected;
+
+        given OnAllocated(relay_addr)
+            turn Connecting(i)
+            into Connected(connected::State::new(i.server, relay_addr));
+
+        given OnAllocated ignore ConnectionFailed;
+        given OnAllocated ignore Connected;
+
+        // OnConnectionFailed
+        given OnConnectionFailed ignore Disconnected;
+
+        given OnConnectionFailed(why)
+            turn Connecting(connecting::State {server, ..})
+            | Connected(connected::State {server, ..})
+            into ConnectionFailed(connection_failed::State::new(server, why));
+
+        given OnConnectionFailed ignore ConnectionFailed;
+
+        // OnDisconnected
+        given OnDisconnected ignore Disconnected;
+        given OnDisconnected turn Connecting into Disconnected;
+        given OnDisconnected ignore ConnectionFailed;
+        given OnDisconnected turn Connected into Disconnected;
+
+        // OnRedirect
+        given OnRedirect ignore Disconnected;
+
+        given OnRedirect(server)
+            turn Connecting(_)
+            into Disconnected(disconnected::State::new(format!("{server}")));
+
+        given OnRedirect ignore ConnectionFailed;
+        given OnRedirect ignore Connected;
+
+        // ToConnecting
+        given ToConnecting { server, username, password}
+            turn Disconnected(_)
+            into Connecting(connecting::State::new(server.clone()))
+            then (command_snd) {
                 command_snd
                     .send(CommandMessage::ConnectRelay {
                         server,
@@ -102,96 +106,16 @@ impl IcedComponent for State {
                         password,
                     })
                     .unwrap();
-            }
+            };
 
-            (
-                Self::Connecting(connecting::State { server, .. })
-                | Self::ConnectionFailed(connection_failed::State { server, .. }),
-                Message::ToDisconnected,
-            )
-            | (
-                Self::Connecting(connecting::State { server, .. })
-                | Self::Connected(connected::State { server, .. }),
-                Message::OnDisconnected,
-            ) => {
-                *self = Self::Disconnected(disconnected::State::new(server));
-            }
+        given ToConnecting ignore Connecting;
+        given ToConnecting ignore ConnectionFailed;
+        given ToConnecting ignore Connected;
 
-            (
-                Self::Connecting(connecting::State { server, .. }),
-                Message::OnAllocated(relay_addr),
-            ) => {
-                *self = Self::Connected(connected::State::new(server, relay_addr));
-            }
-
-            (
-                Self::Connecting(connecting::State { server, .. })
-                | Self::Connected(connected::State { server, .. }),
-                Message::OnConnectionFailed(why),
-            ) => {
-                *self = Self::ConnectionFailed(connection_failed::State::new(server, why));
-            }
-
-            (Self::Connecting(_), Message::OnRedirect(server)) => {
-                *self = Self::Disconnected(disconnected::State::new(format!("{server}")));
-            }
-
-            // Inner-state messages
-            (Self::Disconnected(mut state), Message::ForDisconnected(message)) => {
-                let task = state.update(message, command_snd);
-                *self = Self::Disconnected(state);
-                return task;
-            }
-
-            (Self::Connecting(mut state), Message::ForConnecting(message)) => {
-                let task = state.update(message, command_snd);
-                *self = Self::Connecting(state);
-                return task;
-            }
-
-            #[allow(unreachable_patterns)]
-            (Self::ConnectionFailed(mut state), Message::ForConnectionFailed(message)) => {
-                let task = state.update(message, command_snd);
-                *self = Self::ConnectionFailed(state);
-                return task;
-            }
-
-            (Self::Connected(mut state), Message::ForConnected(message)) => {
-                let task = state.update(message, command_snd);
-                *self = Self::Connected(state);
-                return task;
-            }
-
-            (Self::Connected(mut state), Message::ForPeerByAddr(j, message)) => {
-                let task = state.update(connected::Message::ForPeerByAddr(j, message), command_snd);
-                *self = Self::Connected(state);
-                return task;
-            }
-
-            // Invalid states or messages
-            (Self::Intermediate, _) => {
-                unreachable!("Relay UI state is in an intermediate state");
-            }
-
-            (state, message) => {
-                eprintln!("Ignoring message: {message:?} @ {state:?}");
-                *self = state;
-            }
-        }
-
-        Task::none()
-    }
-
-    fn view<'a>(&'a self, _extra: Self::ExtraViewArgs<'_>) -> Element<'a, Self::Message> {
-        match self {
-            Self::Disconnected(i) => i.view(()).map(Message::ForDisconnected),
-            Self::Connecting(i) => i.view(()).map(Message::ForConnecting),
-            Self::ConnectionFailed(i) => i.view(()).map(Message::ForConnectionFailed),
-            Self::Connected(i) => i.view(()).map(Message::ForConnected),
-
-            Self::Intermediate => {
-                unreachable!("Relay UI state is in an intermediate state");
-            }
-        }
+        // ToDisconnected
+        given ToDisconnected ignore Disconnected;
+        given ToDisconnected turn Connecting into Disconnected;
+        given ToDisconnected turn ConnectionFailed into Disconnected;
+        given ToDisconnected turn Connected into Disconnected;
     }
 }

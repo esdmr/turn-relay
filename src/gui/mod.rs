@@ -1,4 +1,5 @@
 mod app;
+mod macros;
 mod peer;
 mod relay;
 mod types;

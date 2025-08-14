@@ -5,349 +5,149 @@ mod ready;
 mod types;
 mod waiting;
 
-use std::{mem::replace, net::SocketAddr};
+use std::net::SocketAddr;
 
-use iced::{Element, Task};
 use tokio::sync::broadcast;
 
-use crate::{gui::types::IcedComponent, worker::CommandMessage};
+use crate::{gui::macros::router_component, worker::CommandMessage};
 
-#[derive(Debug, Clone)]
-pub enum Message {
-    ForEditingPeer(editing_peer::Message),
-    ForEditingLocal(editing_local::Message),
-    ForWaiting(waiting::Message),
-    ForFailed(failed::Message),
-    ForReady(ready::Message),
-    ToEditingLocal,
-    ToWaiting {
-        peer_addr: SocketAddr,
-        pinned_addr: Option<SocketAddr>,
-    },
-    ToReady,
-    OnPermissionGranted,
-    OnPermissionDenied,
-    OnBound(SocketAddr),
-    OnUnbound,
-    OnBindFailed,
-}
-
-impl From<editing_peer::Message> for Message {
-    fn from(value: editing_peer::Message) -> Self {
-        Self::ForEditingPeer(value)
-    }
-}
-
-impl From<editing_local::Message> for Message {
-    fn from(value: editing_local::Message) -> Self {
-        Self::ForEditingLocal(value)
-    }
-}
-
-impl From<waiting::Message> for Message {
-    fn from(value: waiting::Message) -> Self {
-        Self::ForWaiting(value)
-    }
-}
-
-impl From<failed::Message> for Message {
-    fn from(value: failed::Message) -> Self {
-        Self::ForFailed(value)
-    }
-}
-
-impl From<ready::Message> for Message {
-    fn from(value: ready::Message) -> Self {
-        Self::ForReady(value)
-    }
-}
-
-#[derive(Debug, Clone)]
-pub enum State {
-    EditingPeer(editing_peer::State),
-    EditingLocal(editing_local::State),
-    Waiting(waiting::State),
-    Failed(failed::State),
-    Ready(ready::State),
-    Intermediate,
-}
-
-impl Default for State {
-    fn default() -> Self {
-        Self::EditingPeer(editing_peer::State::default())
-    }
-}
-
-impl State {
-    pub fn compare_peer(&self, other_peer_addr: SocketAddr) -> bool {
-        match self {
-            Self::EditingPeer(_) => false,
-            Self::EditingLocal(i) => i.compare_peer(other_peer_addr),
-            Self::Waiting(i) => i.compare_peer(other_peer_addr),
-            Self::Failed(i) => i.compare_peer(other_peer_addr),
-            Self::Ready(i) => i.compare_peer(other_peer_addr),
-            Self::Intermediate => {
-                unreachable!("Peer UI state is in an intermediate state");
-            }
-        }
+router_component! {
+    message enum Message {
+        OnBindFailed,
+        OnBound(SocketAddr),
+        OnPermissionDenied,
+        OnPermissionGranted,
+        OnUnbound,
+        ToEditingLocal,
+        ToReady,
+        ToWaiting {
+            peer_addr: SocketAddr,
+            pinned_addr: Option<SocketAddr>,
+        },
     }
 
-    pub const fn is_uncommitted(&self) -> bool {
-        matches!(self, Self::EditingPeer(_))
+    state enum State {
+        EditingPeer(editing_peer::State),
+        EditingLocal(editing_local::State),
+        Waiting(waiting::State),
+        Failed(failed::State),
+        Ready(ready::State),
     }
-}
 
-impl IcedComponent for State {
-    type Message = Message;
-    type TaskMessage = Message;
+    impl Default for EditingPeer;
+
     type ExtraUpdateArgs<'a> = (&'a broadcast::Sender<CommandMessage>, SocketAddr);
     type ExtraViewArgs<'a> = usize;
     type ExtraSubscriptionArgs<'a> = ();
 
-    #[allow(clippy::too_many_lines)]
-    fn update(
-        &mut self,
-        message: Self::Message,
-        (command_snd, relay_addr): Self::ExtraUpdateArgs<'_>,
-    ) -> Task<Self::TaskMessage> {
-        match (replace(self, Self::Intermediate), message) {
-            // State transitions
-            (
-                Self::Failed(failed::State {
-                    peer_addr,
-                    pinned_addr,
-                    ..
-                }),
-                Message::ToEditingLocal,
-            ) => {
-                *self = Self::EditingLocal(editing_local::State::new(
-                    peer_addr,
-                    pinned_addr.map_or_else(String::new, |i| format!("{i}")),
-                ));
-            }
+    fn update(..) {
+        // OnBindFailed
+        given OnBindFailed ignore EditingPeer;
+        given OnBindFailed ignore EditingLocal;
 
-            (
-                Self::EditingPeer(_) | Self::EditingLocal(_),
-                Message::ToWaiting {
-                    peer_addr,
-                    pinned_addr,
-                },
-            ) => {
-                *self = Self::Waiting(waiting::State::new(peer_addr, pinned_addr));
+        given OnBindFailed {}
+            turn Waiting(i)
+            into Failed(failed::State::new_bind_failed(i.peer_addr, i.local_addr.pinned_addr()));
 
+        given OnBindFailed {}
+            pass Failed(failed::Message::OnBindFailed);
+
+        given OnBindFailed {}
+            turn Ready(i)
+            into Failed(failed::State::new_bind_failed(i.peer_addr, i.pinned.then_some(i.local_addr)));
+
+        // OnBound
+        given OnBound ignore EditingPeer;
+        given OnBound ignore EditingLocal;
+
+        given OnBound(i)
+            pass Waiting(waiting::Message::OnBound(i));
+
+        given OnBound ignore Failed;
+
+        given OnBound(i)
+            pass Ready(ready::Message::OnBound(i));
+
+        // OnPermissionDenied
+        given OnPermissionDenied ignore EditingPeer;
+        given OnPermissionDenied ignore EditingLocal;
+
+        given OnPermissionDenied {}
+            turn Waiting(i)
+            into Failed(failed::State::new_permission_denied(i.peer_addr, i.local_addr.pinned_addr()));
+
+        given OnPermissionDenied {}
+            pass Failed(failed::Message::OnPermissionDenied);
+
+        given OnPermissionDenied {}
+            turn Ready(i)
+            into Failed(failed::State::new_bind_failed(i.peer_addr, i.pinned.then_some(i.local_addr)));
+
+        // OnPermissionGranted
+        given OnPermissionGranted ignore EditingPeer;
+        given OnPermissionGranted ignore EditingLocal;
+
+        given OnPermissionGranted {}
+            pass Waiting(waiting::Message::OnPermissionGranted);
+
+        given OnPermissionGranted ignore Failed;
+        given OnPermissionGranted ignore Ready;
+
+        // OnUnbound
+        given OnUnbound ignore EditingPeer;
+        given OnUnbound ignore EditingLocal;
+        given OnUnbound turn Waiting into EditingLocal;
+        given OnUnbound turn Failed into EditingLocal;
+        given OnUnbound turn Ready into EditingLocal;
+
+        // ToEditingLocal
+        given ToEditingLocal ignore EditingPeer;
+        given ToEditingLocal ignore EditingLocal;
+        given ToEditingLocal turn Waiting into EditingLocal;
+        given ToEditingLocal turn Failed into EditingLocal;
+        given ToEditingLocal turn Ready into EditingLocal;
+
+        // ToReady
+        given ToReady ignore EditingPeer;
+        given ToReady ignore EditingLocal;
+        given ToReady turn Waiting into Ready;
+        given ToReady ignore Failed;
+        given ToReady ignore Ready;
+
+        // ToWaiting
+        given ToWaiting { peer_addr, pinned_addr, }
+            turn EditingPeer(_) | EditingLocal(_)
+            into Waiting(waiting::State::new(peer_addr, pinned_addr))
+            then((command_snd, _)) {
                 command_snd
                     .send(CommandMessage::ConnectPeer {
                         peer_addr,
                         local_addr: pinned_addr,
                     })
                     .unwrap();
-            }
+            };
 
-            (
-                Self::Waiting(waiting::State {
-                    peer_addr,
-                    local_addr,
-                    ..
-                }),
-                Message::ToReady,
-            ) => {
-                *self = Self::Ready(ready::State::new(
-                    peer_addr,
-                    local_addr.bound_addr().unwrap(),
-                    local_addr.is_pinned(),
-                ));
-            }
+        given ToWaiting ignore Waiting;
+        given ToWaiting ignore Failed;
+        given ToWaiting ignore Ready;
+    }
+}
 
-            (
-                Self::Waiting(waiting::State {
-                    peer_addr,
-                    local_addr,
-                    ..
-                }),
-                Message::OnPermissionDenied,
-            ) => {
-                *self = Self::Failed(failed::State::new_permission_denied(
-                    peer_addr,
-                    local_addr.pinned_addr(),
-                ));
+impl State {
+    pub fn compare_peer(&self, other_peer_addr: SocketAddr) -> bool {
+        match self {
+            Self::Intermediate => {
+                unreachable!("Fatal: UI state is in an intermediate state");
             }
-
-            (
-                Self::Ready(ready::State {
-                    peer_addr,
-                    local_addr,
-                    pinned,
-                }),
-                Message::OnPermissionDenied,
-            ) => {
-                *self = Self::Failed(failed::State::new_permission_denied(
-                    peer_addr,
-                    pinned.then_some(local_addr),
-                ));
-            }
-
-            (
-                Self::Waiting(waiting::State {
-                    peer_addr,
-                    local_addr,
-                    ..
-                }),
-                Message::OnBindFailed,
-            ) => {
-                *self = Self::Failed(failed::State::new_bind_failed(
-                    peer_addr,
-                    local_addr.pinned_addr(),
-                ));
-            }
-
-            (
-                Self::Ready(ready::State {
-                    peer_addr,
-                    local_addr,
-                    pinned,
-                }),
-                Message::OnBindFailed,
-            ) => {
-                *self = Self::Failed(failed::State::new_bind_failed(
-                    peer_addr,
-                    pinned.then_some(local_addr),
-                ));
-            }
-
-            (
-                Self::Waiting(waiting::State {
-                    peer_addr,
-                    local_addr,
-                    ..
-                }),
-                Message::OnUnbound,
-            ) => {
-                *self = Self::EditingLocal(editing_local::State::new(
-                    peer_addr,
-                    local_addr
-                        .pinned_addr()
-                        .map_or_else(String::new, |i| format!("{i}")),
-                ));
-            }
-
-            (
-                Self::Failed(failed::State {
-                    peer_addr,
-                    pinned_addr,
-                    ..
-                }),
-                Message::OnUnbound,
-            ) => {
-                *self = Self::EditingLocal(editing_local::State::new(
-                    peer_addr,
-                    pinned_addr.map_or_else(String::new, |i| format!("{i}")),
-                ));
-            }
-
-            (
-                Self::Ready(ready::State {
-                    peer_addr,
-                    local_addr,
-                    pinned,
-                }),
-                Message::OnUnbound,
-            ) => {
-                *self = Self::EditingLocal(editing_local::State::new(
-                    peer_addr,
-                    if pinned {
-                        format!("{local_addr}")
-                    } else {
-                        String::new()
-                    },
-                ));
-            }
-
-            // External events
-            (Self::Waiting(mut i), Message::OnPermissionGranted) => {
-                let task = i.update(
-                    waiting::Message::OnPermissionGranted,
-                    (command_snd, relay_addr),
-                );
-                *self = Self::Waiting(i);
-                return task;
-            }
-
-            (Self::Waiting(mut i), Message::OnBound(j)) => {
-                let task = i.update(waiting::Message::OnBound(j), (command_snd, relay_addr));
-                *self = Self::Waiting(i);
-                return task;
-            }
-
-            (Self::Failed(mut i), Message::OnPermissionDenied) => {
-                let task = i.update(
-                    failed::Message::OnPermissionDenied,
-                    (command_snd, relay_addr),
-                );
-                *self = Self::Failed(i);
-                return task;
-            }
-
-            (Self::Failed(mut i), Message::OnBindFailed) => {
-                let task = i.update(failed::Message::OnBindFailed, (command_snd, relay_addr));
-                *self = Self::Failed(i);
-                return task;
-            }
-
-            // Inner-state messages
-            (Self::EditingPeer(mut i), Message::ForEditingPeer(message)) => {
-                let task = i.update(message, (command_snd, relay_addr));
-                *self = Self::EditingPeer(i);
-                return task;
-            }
-
-            (Self::EditingLocal(mut i), Message::ForEditingLocal(message)) => {
-                let task = i.update(message, (command_snd, relay_addr));
-                *self = Self::EditingLocal(i);
-                return task;
-            }
-
-            (Self::Waiting(mut i), Message::ForWaiting(message)) => {
-                let task = i.update(message, (command_snd, relay_addr));
-                *self = Self::Waiting(i);
-                return task;
-            }
-
-            (Self::Failed(mut i), Message::ForFailed(message)) => {
-                let task = i.update(message, (command_snd, relay_addr));
-                *self = Self::Failed(i);
-                return task;
-            }
-
-            (Self::Ready(mut i), Message::ForReady(message)) => {
-                let task = i.update(message, (command_snd, relay_addr));
-                *self = Self::Ready(i);
-                return task;
-            }
-
-            // Invalid states or messages
-            (Self::Intermediate, _) => {
-                unreachable!("Peer UI state is in an intermediate state");
-            }
-
-            (state, message) => {
-                eprintln!("Ignoring message: {message:?} @ {state:?}");
-                *self = state;
-            }
+            Self::EditingPeer(_) => false,
+            Self::EditingLocal(editing_local::State { peer_addr, .. })
+            | Self::Waiting(waiting::State { peer_addr, .. })
+            | Self::Failed(failed::State { peer_addr, .. })
+            | Self::Ready(ready::State { peer_addr, .. }) => *peer_addr == other_peer_addr,
         }
-
-        Task::none()
     }
 
-    fn view<'a>(&'a self, index: Self::ExtraViewArgs<'_>) -> Element<'a, Self::Message> {
-        match self {
-            Self::EditingPeer(i) => i.view(index).map(Message::ForEditingPeer),
-            Self::EditingLocal(i) => i.view(index).map(Message::ForEditingLocal),
-            Self::Waiting(i) => i.view(index).map(Message::ForWaiting),
-            Self::Failed(i) => i.view(index).map(Message::ForFailed),
-            Self::Ready(i) => i.view(index).map(Message::ForReady),
-            Self::Intermediate => {
-                unreachable!("Peer UI state is in an intermediate state");
-            }
-        }
+    pub const fn is_uncommitted(&self) -> bool {
+        matches!(self, Self::EditingPeer(..))
     }
 }

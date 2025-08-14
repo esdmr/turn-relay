@@ -94,7 +94,7 @@ impl IcedComponent for State {
             Message::ForPeerByIndex(index, message) => {
                 return self.peers[index]
                     .update(message, (command_snd, self.relay_addr))
-                    .map(move |i| super::Message::ForConnected(Message::ForPeerByIndex(index, i)));
+                    .map(move |i| super::Message::ForPeerByIndex(index, i));
             }
 
             Message::ForPeerByAddr(peer_addr, message) => {
@@ -106,9 +106,7 @@ impl IcedComponent for State {
                 {
                     return peer
                         .update(message, (command_snd, self.relay_addr))
-                        .map(move |i| {
-                            super::Message::ForConnected(Message::ForPeerByIndex(index, i))
-                        });
+                        .map(move |i| super::Message::ForPeerByIndex(index, i));
                 }
 
                 eprintln!("non-existent peer {peer_addr} ignored: {message:?} @ {self:?}");

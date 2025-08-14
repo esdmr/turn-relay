@@ -24,10 +24,6 @@ pub struct State {
 }
 
 impl State {
-    pub fn compare_peer(&self, other_peer_addr: SocketAddr) -> bool {
-        self.peer_addr == other_peer_addr
-    }
-
     pub const fn new_permission_denied(
         peer_addr: SocketAddr,
         pinned_addr: Option<SocketAddr>,

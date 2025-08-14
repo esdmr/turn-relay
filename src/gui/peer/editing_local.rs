@@ -6,7 +6,15 @@ use iced::{
 };
 use tokio::sync::broadcast;
 
-use crate::{gui::types::IcedComponent, macros::addr, worker::CommandMessage, LOCAL_IP};
+use crate::{
+    gui::{
+        peer::{failed, ready, waiting},
+        types::IcedComponent,
+    },
+    macros::addr,
+    worker::CommandMessage,
+    LOCAL_IP,
+};
 
 #[derive(Debug, Clone)]
 pub enum Message {
@@ -20,15 +28,37 @@ pub struct State {
     local_addr: String,
 }
 
-impl State {
-    pub fn compare_peer(&self, other_peer_addr: SocketAddr) -> bool {
-        self.peer_addr == other_peer_addr
-    }
-
-    pub const fn new(peer_addr: SocketAddr, local_addr: String) -> Self {
+impl From<waiting::State> for State {
+    fn from(value: waiting::State) -> Self {
         Self {
-            peer_addr,
-            local_addr,
+            peer_addr: value.peer_addr,
+            local_addr: value
+                .local_addr
+                .pinned_addr()
+                .map_or_else(String::new, |i| format!("{i}")),
+        }
+    }
+}
+
+impl From<failed::State> for State {
+    fn from(value: failed::State) -> Self {
+        Self {
+            peer_addr: value.peer_addr,
+            local_addr: value
+                .pinned_addr
+                .map_or_else(String::new, |i| format!("{i}")),
+        }
+    }
+}
+
+impl From<ready::State> for State {
+    fn from(value: ready::State) -> Self {
+        Self {
+            peer_addr: value.peer_addr,
+            local_addr: value
+                .pinned
+                .then_some(value.local_addr)
+                .map_or_else(String::new, |i| format!("{i}")),
         }
     }
 }

@@ -6,7 +6,13 @@ use iced::{
 };
 use tokio::sync::broadcast;
 
-use crate::{gui::types::IcedComponent, worker::CommandMessage};
+use crate::{
+    gui::{
+        relay::{connected, connecting, connection_failed},
+        types::IcedComponent,
+    },
+    worker::CommandMessage,
+};
 
 #[derive(Debug, Clone)]
 pub enum Message {
@@ -29,6 +35,24 @@ impl State {
             server,
             ..Default::default()
         }
+    }
+}
+
+impl From<connecting::State> for State {
+    fn from(value: connecting::State) -> Self {
+        Self::new(value.server)
+    }
+}
+
+impl From<connection_failed::State> for State {
+    fn from(value: connection_failed::State) -> Self {
+        Self::new(value.server)
+    }
+}
+
+impl From<connected::State> for State {
+    fn from(value: connected::State) -> Self {
+        Self::new(value.server)
     }
 }
 
