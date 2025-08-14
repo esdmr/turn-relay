@@ -1,7 +1,7 @@
 use crate::gui::types::IcedComponent;
 use crate::gui::{peer, relay};
 use crate::worker::{
-    run_worker, CommandMessage, ServiceMessage, COMMAND_CHANNEL_CAPACITY, SERVICE_CHANNEL_CAPACITY,
+    run, CommandMessage, ServiceMessage, COMMAND_CHANNEL_CAPACITY, SERVICE_CHANNEL_CAPACITY,
 };
 
 use iced::widget::{center, container};
@@ -133,7 +133,7 @@ impl IcedComponent for State {
                 iced::stream::channel(
                     SERVICE_CHANNEL_CAPACITY,
                     move |service_snd: futures::channel::mpsc::Sender<ServiceMessage>| {
-                        run_worker(move || command_snd.subscribe(), service_snd)
+                        run(move || command_snd.subscribe(), service_snd)
                     },
                 ),
             )

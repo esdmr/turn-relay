@@ -13,7 +13,7 @@ pub const LOCAL_DYN_SOCKET: SocketAddr = addr!(LOCAL_IP:0);
 pub const DEFAULT_FWD_SOCKET: SocketAddr = addr!(LOCAL_IP:34197);
 
 fn main() -> anyhow::Result<()> {
-    gui::run_gui()?;
+    gui::run()?;
 
     Ok(())
 }

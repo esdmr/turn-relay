@@ -12,13 +12,13 @@ use tokio::task::JoinHandle;
 use crate::worker::types::{
     ToAnyhowResult, ToWorkerErr, WorkerErr, WorkerOk, WorkerResult, WorkerResultHelper,
 };
-use crate::worker::{peer::PeerWorker, relay::RelayWorker, types::DataMessage};
+use crate::worker::{peer, relay, types::DataMessage};
 
 pub const DATA_CHANNEL_CAPACITY: usize = u8::MAX as usize;
 pub const SERVICE_CHANNEL_CAPACITY: usize = u8::MAX as usize;
 pub const COMMAND_CHANNEL_CAPACITY: usize = u8::MAX as usize;
 
-pub struct CoordinatorWorker<F>
+pub struct Worker<F>
 where
     F: Send + FnMut() -> broadcast::Receiver<CommandMessage>,
 {
@@ -32,7 +32,7 @@ where
     fwd_addr: SocketAddr,
 }
 
-impl<F> CoordinatorWorker<F>
+impl<F> Worker<F>
 where
     F: Send + FnMut() -> broadcast::Receiver<CommandMessage>,
 {
@@ -43,7 +43,7 @@ where
         let (downstream_snd, _) = broadcast::channel::<DataMessage>(DATA_CHANNEL_CAPACITY);
 
         let relay = tokio::spawn(
-            RelayWorker::new(
+            relay::Worker::new(
                 upstream_rcv,
                 downstream_snd.clone(),
                 subscribe_command(),
@@ -78,7 +78,7 @@ where
                 self.peers.insert(
                     peer_addr.to_string(),
                     tokio::spawn(
-                        PeerWorker::new(
+                        peer::Worker::new(
                             peer_addr,
                             local_addr,
                             self.fwd_addr,

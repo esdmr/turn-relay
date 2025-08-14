@@ -8,7 +8,7 @@ use iced::{application, window, Settings, Size};
 
 use crate::gui::types::IcedBasicComponent;
 
-pub fn run_gui() -> iced::Result {
+pub fn run() -> iced::Result {
     application(
         "TURN Relay",
         app::State::update_basic,

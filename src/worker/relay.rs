@@ -17,7 +17,7 @@ use crate::worker::types::{
 use crate::ALL_DYN_SOCKET;
 
 #[derive(Debug)]
-pub struct RelayWorker {
+pub struct Worker {
     upstream_rcv: mpsc::Receiver<DataMessage>,
     downstream_snd: broadcast::Sender<DataMessage>,
     command_rcv: broadcast::Receiver<CommandMessage>,
@@ -27,7 +27,7 @@ pub struct RelayWorker {
     will_terminate: bool,
 }
 
-impl RelayWorker {
+impl Worker {
     pub fn new(
         upstream_rcv: mpsc::Receiver<DataMessage>,
         downstream_snd: broadcast::Sender<DataMessage>,

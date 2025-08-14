@@ -6,7 +6,10 @@ use iced::{
 };
 use tokio::sync::broadcast;
 
-use crate::{gui::{peer::waiting, types::IcedComponent}, worker::CommandMessage};
+use crate::{
+    gui::{peer::waiting, types::IcedComponent},
+    worker::CommandMessage,
+};
 
 #[derive(Debug, Clone)]
 pub enum Message {

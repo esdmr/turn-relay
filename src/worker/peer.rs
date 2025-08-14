@@ -19,7 +19,7 @@ use crate::worker::types::{
 use crate::LOCAL_DYN_SOCKET;
 
 #[derive(Debug)]
-pub struct PeerWorker {
+pub struct Worker {
     peer_addr: SocketAddr,
     pinned_addr: Option<SocketAddr>,
     fwd_addr: SocketAddr,
@@ -31,7 +31,7 @@ pub struct PeerWorker {
     local_addr: SocketAddr,
 }
 
-impl PeerWorker {
+impl Worker {
     pub const fn new(
         peer_addr: SocketAddr,
         pinned_addr: Option<SocketAddr>,
