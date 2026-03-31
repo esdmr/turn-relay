@@ -24,7 +24,7 @@ pub trait IcedComponent {
 
 pub trait IcedBasicComponent: IcedComponent {
     fn update_basic(&mut self, message: Self::Message) -> Task<Self::TaskMessage>;
-    fn view_basic(&self) -> Element<Self::Message>;
+    fn view_basic(&self) -> Element<'_, Self::Message>;
     fn subscription_basic(&self) -> Subscription<Self::Message>;
 }
 
@@ -43,7 +43,7 @@ where
     }
 
     #[inline]
-    fn view_basic(&self) -> Element<Self::Message> {
+    fn view_basic(&self) -> Element<'_, Self::Message> {
         self.view(())
     }
 
