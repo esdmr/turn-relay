@@ -35,10 +35,10 @@ impl IcedComponent for State {
         _command_snd: Self::ExtraUpdateArgs<'_>,
     ) -> Task<Self::TaskMessage> {
         match message {
-            Message::Disconnect => {}
+            Message::Disconnect => {
+                Task::done(super::Message::ToDisconnected)
+            }
         }
-
-        Task::none()
     }
 
     fn view<'a>(&'a self, _extra: Self::ExtraViewArgs<'_>) -> Element<'a, Self::Message> {
