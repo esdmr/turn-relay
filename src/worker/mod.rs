@@ -17,3 +17,12 @@ where
 {
     Worker::new(subscribe_command, service_snd).start().await;
 }
+
+pub async fn run_headless() {
+    let (command_snd, _) = broadcast::channel::<CommandMessage>(COMMAND_CHANNEL_CAPACITY);
+    let (service_snd, _) = mpsc::channel::<ServiceMessage>(SERVICE_CHANNEL_CAPACITY);
+
+    Worker::new(move || command_snd.subscribe(), service_snd)
+        .start()
+        .await;
+}
