@@ -114,6 +114,8 @@ impl WorkerResultHelper for WorkerResult {
 
 pub trait WorkerErrHelper {
     type Result;
+
+    #[allow(dead_code)]
     fn catch<R, F>(self, f: F) -> Self::Result
     where
         F: FnOnce(&anyhow::Error) -> Result<R, WorkerErr>;
