@@ -1,75 +1,81 @@
 use std::mem::take;
 use std::{collections::HashMap, net::SocketAddr};
 
-use crate::worker::types::{CommandMessage, ServiceMessage};
-use crate::DEFAULT_FWD_SOCKET;
+use crate::control::Control;
+use crate::{gui, DEFAULT_FWD_SOCKET};
 use futures::channel::mpsc;
 use futures::future::join_all;
-use futures::SinkExt;
 use tokio::sync::broadcast::{self, error::RecvError};
 use tokio::task::JoinHandle;
 
-use crate::worker::types::{
-    ToAnyhowResult, ToWorkerErr, WorkerErr, WorkerOk, WorkerResult, WorkerResultHelper,
-};
-use crate::worker::{peer, relay, types::DataMessage};
+use crate::result::{TaskErr, TaskOk, TaskResult, TaskResultHelper, ToAnyhowResult, ToTaskErr};
+use crate::worker::{CommandMessage, DataMessage, PeerWorker, RelayWorker, ServiceMessage};
 
 pub const DATA_CHANNEL_CAPACITY: usize = u8::MAX as usize;
 pub const SERVICE_CHANNEL_CAPACITY: usize = u8::MAX as usize;
 pub const COMMAND_CHANNEL_CAPACITY: usize = u8::MAX as usize;
 
-pub struct Worker<F>
-where
-    F: Send + FnMut() -> broadcast::Receiver<CommandMessage>,
-{
-    subscribe_command: F,
-    command_rcv: broadcast::Receiver<CommandMessage>,
-    service_snd: mpsc::Sender<ServiceMessage>,
+pub struct Coordinator {
+    command_snd: broadcast::Sender<CommandMessage>,
+    service_snd: broadcast::Sender<ServiceMessage>,
     upstream_snd: mpsc::Sender<DataMessage>,
     downstream_snd: broadcast::Sender<DataMessage>,
     relay: JoinHandle<()>,
     peers: HashMap<String, JoinHandle<()>>,
+    control: Option<JoinHandle<()>>,
     fwd_addr: SocketAddr,
 }
 
-impl<F> Worker<F>
-where
-    F: Send + FnMut() -> broadcast::Receiver<CommandMessage>,
-{
-    pub fn new(mut subscribe_command: F, service_snd: mpsc::Sender<ServiceMessage>) -> Self {
-        let command_rcv = subscribe_command();
-
+impl Coordinator {
+    pub fn new() -> Self {
+        let (command_snd, command_rcv) =
+            broadcast::channel::<CommandMessage>(COMMAND_CHANNEL_CAPACITY);
+        let (service_snd, _) = broadcast::channel::<ServiceMessage>(SERVICE_CHANNEL_CAPACITY);
         let (upstream_snd, upstream_rcv) = mpsc::channel::<DataMessage>(DATA_CHANNEL_CAPACITY);
         let (downstream_snd, _) = broadcast::channel::<DataMessage>(DATA_CHANNEL_CAPACITY);
 
         let relay = tokio::spawn(
-            relay::Worker::new(
+            RelayWorker::new(
                 upstream_rcv,
                 downstream_snd.clone(),
-                subscribe_command(),
+                command_rcv,
                 service_snd.clone(),
             )
             .start(),
         );
 
         Self {
-            subscribe_command,
-            command_rcv,
+            command_snd,
             service_snd,
             upstream_snd,
             downstream_snd,
             relay,
             peers: HashMap::new(),
+            control: None,
             fwd_addr: DEFAULT_FWD_SOCKET,
         }
+    }
+
+    pub fn run_gui(&mut self) -> impl FnOnce() -> anyhow::Result<()> {
+        let service_rcv = self.service_snd.subscribe();
+        let command_snd = self.command_snd.clone();
+
+        move || gui::State::run(service_rcv, command_snd).anyhow()
+    }
+
+    pub fn run_control(&mut self) {
+        let service_rcv = self.service_snd.subscribe();
+        let command_snd = self.command_snd.clone();
+
+        self.control = Some(tokio::spawn(Control::new(service_rcv, command_snd).start()));
     }
 
     async fn handle_command_message(
         &mut self,
         command_message: Result<CommandMessage, RecvError>,
-    ) -> WorkerResult {
+    ) -> TaskResult {
         match command_message.anyhow().into_recoverable()? {
-            CommandMessage::ConnectRelay { .. } => WorkerResult::continued(),
+            CommandMessage::ConnectRelay { .. } => TaskResult::continued(),
 
             CommandMessage::ConnectPeer {
                 peer_addr,
@@ -78,26 +84,26 @@ where
                 self.peers.insert(
                     peer_addr.to_string(),
                     tokio::spawn(
-                        peer::Worker::new(
+                        PeerWorker::new(
                             peer_addr,
                             local_addr,
                             self.fwd_addr,
                             self.upstream_snd.clone(),
                             self.downstream_snd.subscribe(),
-                            (self.subscribe_command)(),
+                            self.command_snd.subscribe(),
                             self.service_snd.clone(),
                         )
                         .start(),
                     ),
                 );
 
-                WorkerResult::continued()
+                TaskResult::continued()
             }
 
             CommandMessage::ChangeFwdAddr(i) => {
                 println!("Coordinator: New peers will forward to {i}");
                 self.fwd_addr = i;
-                WorkerResult::continued()
+                TaskResult::continued()
             }
 
             CommandMessage::DisconnectAll => {
@@ -112,7 +118,7 @@ where
                     .anyhow()
                     .into_recoverable()?;
 
-                WorkerResult::continued()
+                TaskResult::continued()
             }
 
             CommandMessage::DisconnectPeer(peer_addr) => {
@@ -125,54 +131,74 @@ where
 
                     self.service_snd
                         .send(ServiceMessage::PeerUnbound(peer_addr))
-                        .await
                         .anyhow()
                         .into_recoverable()?;
                 }
 
-                WorkerResult::continued()
+                TaskResult::continued()
             }
 
             CommandMessage::TerminateAll => {
                 println!("Coordinator: Terminating");
 
-                WorkerResult::terminate()
+                TaskResult::terminate()
             }
         }
     }
 
-    async fn handle_loop(&mut self) -> WorkerResult {
-        let command_message = self.command_rcv.recv().await;
+    async fn handle_loop(
+        &mut self,
+        command_rcv: &mut broadcast::Receiver<CommandMessage>,
+    ) -> TaskResult {
+        let command_message = command_rcv.recv().await;
         self.handle_command_message(command_message).await
     }
 
-    pub async fn start(mut self) {
-        println!("Coordinator: Worker started");
+    pub async fn start(mut self) -> anyhow::Result<()> {
+        println!("Coordinator: Started");
+
+        let mut command_rcv = self.command_snd.subscribe();
+        let mut status: anyhow::Result<()> = Ok(());
 
         loop {
-            match self.handle_loop().await {
-                Ok(WorkerOk::Continue) => {}
-                Ok(WorkerOk::Terminate) => break,
-                Err(WorkerErr::RecoverableError(error)) => {
+            match self.handle_loop(&mut command_rcv).await {
+                Ok(TaskOk::Continue) => {}
+                Ok(TaskOk::Terminate) => break,
+                Err(TaskErr::RecoverableError(error)) => {
                     eprintln!("Coordinator: Error: {error}");
                 }
-                Err(WorkerErr::UnrecoverableError(error)) => {
-                    eprintln!("Coordinator: Fatal: {error}");
+                Err(TaskErr::UnrecoverableError(error)) => {
+                    status = Err(error.into());
                     break;
                 }
             }
         }
 
-        (&mut self.relay).await.unwrap();
+        let Coordinator {
+            relay,
+            peers,
+            control,
+            ..
+        } = self;
 
-        let peers: HashMap<String, JoinHandle<()>> = take(&mut self.peers);
+        let mut rest = vec![relay];
 
-        join_all(peers.into_values())
-            .await
-            .into_iter()
-            .collect::<Result<Vec<()>, _>>()
-            .unwrap();
+        if let Some(i) = control {
+            rest.push(i);
+        }
 
-        println!("Coordinator: Worker stopped");
+        println!("Coordinator: Waiting for threads...");
+
+        let handles = peers.into_values().chain(rest);
+
+        for i in join_all(handles).await {
+            if let Err(error) = i {
+                status = Err(error.into());
+            }
+        }
+
+        println!("Coordinator: Stopped");
+
+        status
     }
 }

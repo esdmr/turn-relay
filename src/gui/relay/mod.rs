@@ -8,7 +8,7 @@ use std::net::SocketAddr;
 use tokio::sync::broadcast;
 
 use crate::{
-    gui::{macros::router_component, peer},
+    gui::{router::router_component, peer},
     worker::CommandMessage,
 };
 

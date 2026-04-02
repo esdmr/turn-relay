@@ -20,12 +20,12 @@ macro_rules! router_component {
 	) => {
 		#[derive(Debug, Clone)]
 		pub enum $Message {
-			$($state_name ( <$state_type as $crate::gui::types::IcedComponent>::Message ),)*
+			$($state_name ( <$state_type as $crate::gui::component::IcedComponent>::Message ),)*
 			$($message)*
 		}
 
-		$(impl From<<$state_type as $crate::gui::types::IcedComponent>::Message> for $Message {
-			fn from(value: <$state_type as $crate::gui::types::IcedComponent>::Message) -> Self {
+		$(impl From<<$state_type as $crate::gui::component::IcedComponent>::Message> for $Message {
+			fn from(value: <$state_type as $crate::gui::component::IcedComponent>::Message) -> Self {
 				Self::$state_name(value)
 			}
 		})*
@@ -42,7 +42,7 @@ macro_rules! router_component {
 			$($state_name ( $state_type ),)*
 		}
 
-		impl $crate::gui::types::IcedComponent for $State {
+		impl $crate::gui::component::IcedComponent for $State {
 			type Message = $Message;
 			type TaskMessage = $Message;
 			type ExtraUpdateArgs<$ExtraUpdateArgsL> = $ExtraUpdateArgs;

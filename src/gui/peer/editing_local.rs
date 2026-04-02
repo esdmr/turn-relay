@@ -9,9 +9,9 @@ use tokio::sync::broadcast;
 use crate::{
     gui::{
         peer::{failed, ready, waiting},
-        types::IcedComponent,
+        component::IcedComponent,
     },
-    macros::addr,
+    addr::addr,
     worker::CommandMessage,
     LOCAL_IP,
 };

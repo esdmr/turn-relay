@@ -12,10 +12,8 @@ use tokio::sync::broadcast::error::RecvError;
 use tokio_util::codec::BytesCodec;
 use tokio_util::udp::UdpFramed;
 
-use crate::worker::types::{
-    CommandMessage, DataMessage, ServiceMessage, ToAnyhowResult, ToWorkerErr, WorkerErr, WorkerOk,
-    WorkerResult, WorkerResultHelper,
-};
+use crate::result::*;
+use crate::worker::{CommandMessage, DataMessage, ServiceMessage};
 use crate::LOCAL_DYN_SOCKET;
 
 #[derive(Debug)]
@@ -26,7 +24,7 @@ pub struct Worker {
     upstream_snd: mpsc::Sender<DataMessage>,
     downstream_rcv: broadcast::Receiver<DataMessage>,
     command_rcv: broadcast::Receiver<CommandMessage>,
-    service_snd: mpsc::Sender<ServiceMessage>,
+    service_snd: broadcast::Sender<ServiceMessage>,
     socket: Option<UdpFramed<BytesCodec>>,
     local_addr: SocketAddr,
 }
@@ -39,7 +37,7 @@ impl Worker {
         upstream_snd: mpsc::Sender<DataMessage>,
         downstream_rcv: broadcast::Receiver<DataMessage>,
         command_rcv: broadcast::Receiver<CommandMessage>,
-        service_snd: mpsc::Sender<ServiceMessage>,
+        service_snd: broadcast::Sender<ServiceMessage>,
     ) -> Self {
         Self {
             peer_addr,
@@ -65,12 +63,10 @@ impl Worker {
 
         self.socket = Some(UdpFramed::new(socket, BytesCodec::new()));
 
-        self.service_snd
-            .send(ServiceMessage::PeerBound {
-                peer_addr: self.peer_addr,
-                local_addr: self.local_addr,
-            })
-            .await?;
+        self.service_snd.send(ServiceMessage::PeerBound {
+            peer_addr: self.peer_addr,
+            local_addr: self.local_addr,
+        })?;
 
         Ok(())
     }
@@ -78,7 +74,7 @@ impl Worker {
     async fn handle_socket_message(
         &mut self,
         socket_message: Option<Result<(BytesMut, SocketAddr), io::Error>>,
-    ) -> WorkerResult {
+    ) -> TaskResult {
         match socket_message {
             Some(Ok((data, src))) => {
                 #[cfg(debug_assertions)]
@@ -92,7 +88,7 @@ impl Worker {
                     .anyhow()
                     .into_recoverable()?;
 
-                WorkerResult::continued()
+                TaskResult::continued()
             }
 
             Some(Err(e)) => Err(e).anyhow().into_recoverable(),
@@ -103,7 +99,7 @@ impl Worker {
                     self.peer_addr, self.local_addr
                 );
 
-                WorkerResult::terminate()
+                TaskResult::terminate()
             }
         }
     }
@@ -111,7 +107,7 @@ impl Worker {
     async fn handle_relay_message(
         &mut self,
         relay_message: Result<(SocketAddr, Vec<u8>), RecvError>,
-    ) -> WorkerResult {
+    ) -> TaskResult {
         let (src, data) = relay_message.anyhow().into_recoverable()?;
 
         if src == self.peer_addr {
@@ -130,16 +126,16 @@ impl Worker {
                 .into_recoverable()?;
         }
 
-        WorkerResult::continued()
+        TaskResult::continued()
     }
 
     fn handle_command_message(
         &mut self,
         command_message: Result<CommandMessage, RecvError>,
-    ) -> WorkerResult {
+    ) -> TaskResult {
         match command_message.anyhow().into_recoverable()? {
             CommandMessage::ConnectRelay { .. } | CommandMessage::ConnectPeer { .. } => {
-                WorkerResult::continued()
+                TaskResult::continued()
             }
 
             CommandMessage::ChangeFwdAddr(i) => {
@@ -150,18 +146,16 @@ impl Worker {
                 }
 
                 println!("Peer {} <> {} <> {}", self.peer_addr, self.local_addr, i);
-                WorkerResult::continued()
+                TaskResult::continued()
             }
 
-            CommandMessage::DisconnectAll | CommandMessage::TerminateAll => {
-                WorkerResult::terminate()
-            }
+            CommandMessage::DisconnectAll | CommandMessage::TerminateAll => TaskResult::terminate(),
 
-            CommandMessage::DisconnectPeer(i) => WorkerResult::terminate_if(self.peer_addr == i),
+            CommandMessage::DisconnectPeer(i) => TaskResult::terminate_if(self.peer_addr == i),
         }
     }
 
-    async fn handle_loop(&mut self) -> WorkerResult {
+    async fn handle_loop(&mut self) -> TaskResult {
         select! {
             socket_message = self.socket.as_mut().unwrap().next() => {
                 self.handle_socket_message(socket_message).await
@@ -184,8 +178,7 @@ impl Worker {
 
             let _ = self
                 .service_snd
-                .send(ServiceMessage::PeerBindFailed(self.peer_addr))
-                .await;
+                .send(ServiceMessage::PeerBindFailed(self.peer_addr));
 
             return;
         }
@@ -197,12 +190,12 @@ impl Worker {
 
         loop {
             match self.handle_loop().await {
-                Ok(WorkerOk::Continue) => {}
-                Ok(WorkerOk::Terminate) => break,
-                Err(WorkerErr::RecoverableError(error)) => {
+                Ok(TaskOk::Continue) => {}
+                Ok(TaskOk::Terminate) => break,
+                Err(TaskErr::RecoverableError(error)) => {
                     eprintln!("Peer {}: Error: {}", self.peer_addr, error);
                 }
-                Err(WorkerErr::UnrecoverableError(error)) => {
+                Err(TaskErr::UnrecoverableError(error)) => {
                     eprintln!("Peer {}: Fatal: {}", self.peer_addr, error);
                     break;
                 }
@@ -211,8 +204,7 @@ impl Worker {
 
         let _ = self
             .service_snd
-            .send(ServiceMessage::PeerUnbound(self.peer_addr))
-            .await;
+            .send(ServiceMessage::PeerUnbound(self.peer_addr));
 
         println!("Peer {}: Worker stopped", self.peer_addr);
     }

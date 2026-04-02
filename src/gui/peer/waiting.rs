@@ -7,7 +7,7 @@ use iced::{
 use tokio::sync::broadcast;
 
 use crate::{
-    gui::{peer::types::SocketState, types::IcedComponent},
+    gui::{socket_state::SocketState, component::IcedComponent},
     worker::CommandMessage,
 };
 

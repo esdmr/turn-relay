@@ -7,8 +7,8 @@ use iced::{clipboard, Element, Length, Task};
 use tokio::sync::broadcast;
 
 use crate::gui::peer;
-use crate::gui::types::IcedComponent;
-use crate::macros::addr;
+use crate::gui::component::IcedComponent;
+use crate::addr::addr;
 use crate::worker::CommandMessage;
 use crate::LOCAL_IP;
 

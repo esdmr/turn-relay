@@ -7,7 +7,7 @@ use iced::{
 use tokio::sync::broadcast;
 
 use crate::{
-    gui::{peer::waiting, types::IcedComponent},
+    gui::{peer::waiting, component::IcedComponent},
     worker::CommandMessage,
 };
 

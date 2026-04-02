@@ -1,27 +1,52 @@
 use std::collections::HashSet;
+use std::fmt::Debug;
 use std::net::{SocketAddr, ToSocketAddrs};
 
 use anyhow::anyhow;
-use futures::{SinkExt, StreamExt};
+use futures::{pending, SinkExt, StreamExt};
 use tokio::net::UdpSocket;
 use tokio::select;
 use tokio::sync::broadcast;
 
 use futures::channel::mpsc;
-use turnclient::{ChannelUsage, MessageFromTurnServer, MessageToTurnServer, TurnClientBuilder};
-
-use crate::worker::types::{
-    CommandMessage, DataMessage, MaybeTurnClient, ServiceMessage, ToAnyhowResult, ToWorkerErr,
-    WorkerErr, WorkerErrHelper, WorkerOk, WorkerResult, WorkerResultHelper,
+use turnclient::{
+    ChannelUsage, MessageFromTurnServer, MessageToTurnServer, TurnClient, TurnClientBuilder,
 };
+
+use crate::result::*;
+use crate::worker::{CommandMessage, DataMessage, ServiceMessage};
 use crate::ALL_DYN_SOCKET;
+
+struct MaybeTurnClient(Option<TurnClient>);
+
+impl MaybeTurnClient {
+    pub async fn next(&mut self) -> Option<Result<MessageFromTurnServer, anyhow::Error>> {
+        if let Some(client) = &mut self.0 {
+            client.next().await
+        } else {
+            loop {
+                pending!();
+                eprintln!("Relay: Warning: Client was polled again but it is not connected yet");
+            }
+        }
+    }
+}
+
+impl Debug for MaybeTurnClient {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.0 {
+            Some(_) => write!(f, "MaybeTurnClient(Some)"),
+            None => write!(f, "MaybeTurnClient(None)"),
+        }
+    }
+}
 
 #[derive(Debug)]
 pub struct Worker {
     upstream_rcv: mpsc::Receiver<DataMessage>,
     downstream_snd: broadcast::Sender<DataMessage>,
     command_rcv: broadcast::Receiver<CommandMessage>,
-    service_snd: mpsc::Sender<ServiceMessage>,
+    service_snd: broadcast::Sender<ServiceMessage>,
     client: MaybeTurnClient,
     granted_peers: HashSet<String>,
     will_terminate: bool,
@@ -32,7 +57,7 @@ impl Worker {
         upstream_rcv: mpsc::Receiver<DataMessage>,
         downstream_snd: broadcast::Sender<DataMessage>,
         command_rcv: broadcast::Receiver<CommandMessage>,
-        service_snd: mpsc::Sender<ServiceMessage>,
+        service_snd: broadcast::Sender<ServiceMessage>,
     ) -> Self {
         Self {
             upstream_rcv,
@@ -48,7 +73,7 @@ impl Worker {
     async fn handle_turn_message(
         &mut self,
         turn_message: Option<Result<MessageFromTurnServer, anyhow::Error>>,
-    ) -> WorkerResult {
+    ) -> TaskResult {
         use MessageFromTurnServer as M;
 
         match turn_message {
@@ -57,11 +82,10 @@ impl Worker {
 
                 self.service_snd
                     .send(ServiceMessage::RelayAllocated(relay_address))
-                    .await
                     .anyhow()
                     .into_unrecoverable()?;
 
-                WorkerResult::continued()
+                TaskResult::continued()
             }
 
             Some(Ok(M::RecvFrom(src, data))) => {
@@ -70,7 +94,7 @@ impl Worker {
                     .anyhow()
                     .into_recoverable()?;
 
-                WorkerResult::continued()
+                TaskResult::continued()
             }
 
             Some(Ok(M::RedirectedToAlternateServer(new_addr))) => {
@@ -78,11 +102,10 @@ impl Worker {
 
                 self.service_snd
                     .send(ServiceMessage::RelayRedirected(new_addr))
-                    .await
                     .anyhow()
                     .into_unrecoverable()?;
 
-                WorkerResult::continued()
+                TaskResult::continued()
             }
 
             Some(Ok(M::PermissionCreated(peer_addr))) => {
@@ -92,11 +115,10 @@ impl Worker {
 
                 self.service_snd
                     .send(ServiceMessage::RelayPeerGranted(peer_addr))
-                    .await
                     .anyhow()
                     .into_recoverable()?;
 
-                WorkerResult::continued()
+                TaskResult::continued()
             }
 
             Some(Ok(M::PermissionNotCreated(peer_addr))) => {
@@ -104,11 +126,10 @@ impl Worker {
 
                 self.service_snd
                     .send(ServiceMessage::RelayPeerDenied(peer_addr))
-                    .await
                     .anyhow()
                     .into_recoverable()?;
 
-                WorkerResult::continued()
+                TaskResult::continued()
             }
 
             Some(Ok(M::Disconnected)) => {
@@ -116,14 +137,13 @@ impl Worker {
 
                 self.service_snd
                     .send(ServiceMessage::RelayDisconnected)
-                    .await
                     .anyhow()
                     .into_unrecoverable()?;
 
-                WorkerResult::continued()
+                TaskResult::continued()
             }
 
-            Some(Ok(M::APacketIsReceivedAndAutomaticallyHandled)) => WorkerResult::continued(),
+            Some(Ok(M::APacketIsReceivedAndAutomaticallyHandled)) => TaskResult::continued(),
 
             Some(Ok(M::ForeignPacket(src, _))) => {
                 #[cfg(debug_assertions)]
@@ -131,13 +151,13 @@ impl Worker {
                 #[cfg(not(debug_assertions))]
                 let _ = src;
 
-                WorkerResult::continued()
+                TaskResult::continued()
             }
 
             Some(Ok(M::NetworkChange)) => {
                 eprintln!("Relay: Warning: Network changed");
 
-                WorkerResult::continued()
+                TaskResult::continued()
             }
 
             Some(Err(e)) => Err(e).into_recoverable(),
@@ -148,7 +168,7 @@ impl Worker {
 
                 println!("Relay: Socket is closed");
 
-                WorkerResult::terminate_if(self.will_terminate)
+                TaskResult::terminate_if(self.will_terminate)
             }
         }
     }
@@ -156,7 +176,7 @@ impl Worker {
     async fn handle_peer_message(
         &mut self,
         peer_message: Option<(SocketAddr, Vec<u8>)>,
-    ) -> WorkerResult {
+    ) -> TaskResult {
         let (dst, data) = peer_message.unwrap();
 
         if let Some(client) = &mut self.client.0 {
@@ -168,23 +188,22 @@ impl Worker {
             }
         }
 
-        WorkerResult::continued()
+        TaskResult::continued()
     }
 
-    async fn signal_connection_error(&mut self, error: String) -> WorkerResult {
+    async fn signal_connection_error(&mut self, error: String) -> TaskResult {
         self.service_snd
             .send(ServiceMessage::RelayConnectionFailed(error))
-            .await
             .anyhow()
             .into_unrecoverable()?;
 
-        WorkerResult::continued()
+        TaskResult::continued()
     }
 
     async fn handle_command_message(
         &mut self,
         command_message: Result<CommandMessage, broadcast::error::RecvError>,
-    ) -> WorkerResult {
+    ) -> TaskResult {
         match command_message.anyhow().into_recoverable()? {
             CommandMessage::ConnectRelay {
                 server,
@@ -218,7 +237,7 @@ impl Worker {
 
                 println!("Relay: Connected to {server}; Waiting for allocation");
 
-                WorkerResult::continued()
+                TaskResult::continued()
             }
 
             CommandMessage::ConnectPeer { peer_addr, .. } => {
@@ -228,7 +247,6 @@ impl Worker {
 
                         self.service_snd
                             .send(ServiceMessage::RelayPeerGranted(peer_addr))
-                            .await
                             .anyhow()
                             .into_recoverable()?;
                     } else {
@@ -247,12 +265,11 @@ impl Worker {
 
                     self.service_snd
                         .send(ServiceMessage::RelayDisconnected)
-                        .await
                         .anyhow()
                         .into_recoverable()?;
                 }
 
-                WorkerResult::continued()
+                TaskResult::continued()
             }
 
             CommandMessage::DisconnectAll => {
@@ -265,7 +282,7 @@ impl Worker {
                         .into_recoverable()?;
                 }
 
-                WorkerResult::continued()
+                TaskResult::continued()
             }
 
             CommandMessage::TerminateAll => {
@@ -280,16 +297,16 @@ impl Worker {
                         .into_unrecoverable()?;
                 }
 
-                WorkerResult::continued()
+                TaskResult::continued()
             }
 
             CommandMessage::ChangeFwdAddr(..) | CommandMessage::DisconnectPeer(..) => {
-                WorkerResult::continued()
+                TaskResult::continued()
             }
         }
     }
 
-    async fn handle_loop(&mut self) -> WorkerResult {
+    async fn handle_loop(&mut self) -> TaskResult {
         select! {
             turn_message = self.client.next() => {
                 self.handle_turn_message(turn_message).await
@@ -308,12 +325,12 @@ impl Worker {
 
         loop {
             match self.handle_loop().await {
-                Ok(WorkerOk::Continue) => {}
-                Ok(WorkerOk::Terminate) => break,
-                Err(WorkerErr::RecoverableError(error)) => {
+                Ok(TaskOk::Continue) => {}
+                Ok(TaskOk::Terminate) => break,
+                Err(TaskErr::RecoverableError(error)) => {
                     eprintln!("Relay: Error: {error}");
                 }
-                Err(WorkerErr::UnrecoverableError(error)) => {
+                Err(TaskErr::UnrecoverableError(error)) => {
                     eprintln!("Relay: Fatal: {error}");
                     break;
                 }

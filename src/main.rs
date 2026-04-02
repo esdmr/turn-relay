@@ -1,5 +1,8 @@
+mod addr;
+mod control;
+mod coordinator;
 mod gui;
-mod macros;
+mod result;
 mod worker;
 
 use std::{
@@ -7,14 +10,15 @@ use std::{
     net::{IpAddr, SocketAddr},
 };
 
-use crate::macros::addr;
+use crate::{addr::addr, result::ToAnyhowResult};
 
-pub const ALL_IP: IpAddr = addr!(0, 0, 0, 0);
-pub const LOCAL_IP: IpAddr = addr!(127, 0, 0, 1);
-pub const ALL_DYN_SOCKET: SocketAddr = addr!(ALL_IP:0);
-pub const LOCAL_DYN_SOCKET: SocketAddr = addr!(LOCAL_IP:0);
-pub const DEFAULT_FWD_SOCKET: SocketAddr = addr!(LOCAL_IP:34197);
-pub const VERSION: &str = "v1.1.0";
+pub(crate) const ALL_IP: IpAddr = addr!(0, 0, 0, 0);
+pub(crate) const LOCAL_IP: IpAddr = addr!(127, 0, 0, 1);
+pub(crate) const ALL_DYN_SOCKET: SocketAddr = addr!(ALL_IP:0);
+pub(crate) const LOCAL_DYN_SOCKET: SocketAddr = addr!(LOCAL_IP:0);
+pub(crate) const DEFAULT_FWD_SOCKET: SocketAddr = addr!(LOCAL_IP:34197);
+pub(crate) const DEFAULT_CONTROL_SOCKET: SocketAddr = addr!(LOCAL_IP:18576);
+pub(crate) const VERSION: &str = "v1.1.0";
 
 fn print_help() {
     println!(
@@ -32,7 +36,8 @@ fn print_version() {
     println!("{VERSION}");
 }
 
-fn main() -> anyhow::Result<()> {
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
     for i in args().skip(1) {
         if i.len() >= 1 && i[0..2] == *"--" {
             if i.len() == 2 {
@@ -65,19 +70,28 @@ fn main() -> anyhow::Result<()> {
         return Err(anyhow::anyhow!("Unknown argument: {i}"));
     }
 
-    if var("TURN_RELAY_HEADLESS") == Ok("1".to_string()) {
-        println!("Running in headless mode.");
-        tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .unwrap()
-            .block_on(async {
-                worker::run_headless().await;
-            });
-    } else {
+    let mut coord = coordinator::Coordinator::new();
+    let mut gui = None;
+
+    if var("TURN_RELAY_HEADLESS") != Ok("1".to_string()) {
         println!("Running in GUI mode.");
-        gui::run()?;
+        gui = Some(coord.run_gui());
+    } else {
+        println!("Running in Headless mode.");
     }
 
-    Ok(())
+    if var("TURN_RELAY_CONTROL") == Ok("1".to_string()) {
+        println!("Running HTTP control.");
+        coord.run_control();
+    }
+
+    let bg = tokio::spawn(coord.start());
+    let mut result: anyhow::Result<()> = Ok(());
+
+    if let Some(i) = gui {
+        result = i();
+    }
+
+    bg.await.anyhow()??;
+    result
 }

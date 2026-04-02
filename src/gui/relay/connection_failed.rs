@@ -2,7 +2,7 @@ use iced::widget::{button, column, text, vertical_space};
 use iced::{Element, Task};
 use tokio::sync::broadcast;
 
-use crate::gui::types::IcedComponent;
+use crate::gui::component::IcedComponent;
 use crate::worker::CommandMessage;
 
 #[derive(Debug, Clone)]

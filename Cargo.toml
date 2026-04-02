@@ -15,7 +15,11 @@ anyhow = "1.0.98"
 bytes = "1.10.1"
 futures = { version = "0.3.31", default-features = false, features = ['std']}
 iced = { version = "0.13.1", default-features = false, features = ['tiny-skia', 'tokio'] }
-tokio = { version = "1.47.1", default-features = false, features = ['macros']}
+rocket = { version = "0.5.1", default-features = false, features = ["serde_json"] }
+serde = "1.0.228"
+serde_derive = "1.0.228"
+serde_json = "1.0.149"
+tokio = { version = "1.47.1", default-features = false, features = ['macros','io-util']}
 tokio-util = { version = "0.7.16", default-features = false, features = ['codec', 'net']}
 turnclient = "0.5.0"
 

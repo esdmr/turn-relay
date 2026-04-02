@@ -1,0 +1,493 @@
+openapi: 3.1.2
+
+info:
+  title: turn_client controller
+  version: 1.1.0
+
+servers:
+  - url: http://127.0.0.1:18576
+    description: Default port.
+
+tags:
+  - name: Relay
+  - name: Peer
+
+paths:
+  /:
+    get:
+      operationId: getRelay
+      tags:
+        - Relay
+      responses:
+        200:
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Relay"
+
+  /connect:
+    post:
+      operationId: connect
+      tags:
+        - Relay
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                server:
+                  $ref: "#/components/schemas/URL"
+                username:
+                  $ref: "#/components/schemas/Username"
+                password:
+                  $ref: "#/components/schemas/Password"
+              required:
+                - server
+                - username
+                - password
+
+      responses:
+        202:
+          description: Connecting
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RelayConnecting"
+
+        409:
+          description: Not Disconnected
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RelayNotDisconnected"
+
+  /disconnect:
+    post:
+      operationId: disconnect
+      tags:
+        - Relay
+      responses:
+        200:
+          description: Already Disconnected
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RelayDisconnected"
+
+        202:
+          description: Disconnecting
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RelayNotDisconnected"
+
+  /terminate:
+    post:
+      operationId: terminate
+      tags:
+        - Relay
+      responses:
+        202:
+          description: Terminating
+
+  /relay_addr:
+    get:
+      operationId: getRelayAddr
+      tags:
+        - Relay
+      responses:
+        200:
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Socket"
+
+        409:
+          description: Not Connected
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Null"
+
+  /fwd_addr:
+    get:
+      operationId: getFwdAddr
+      tags:
+        - Relay
+      responses:
+        200:
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Socket"
+
+        409:
+          description: Not Connected
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Null"
+
+    put:
+      operationId: setFwdAddr
+      tags:
+        - Relay
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+                $ref: "#/components/schemas/Socket"
+
+      responses:
+        200:
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Socket"
+
+        409:
+          description: Not Connected
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Null"
+
+  /peers:
+    get:
+      operationId: getPeers
+      tags:
+        - Peer
+      responses:
+        200:
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Peers"
+
+        409:
+          description: Not Connected
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyArray"
+
+    post:
+      operationId: addPeer
+      tags:
+        - Peer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                peer_addr:
+                  $ref: "#/components/schemas/Socket"
+                local_addr:
+                  oneOf:
+                    - $ref: "#/components/schemas/Socket"
+                    - $ref: "#/components/schemas/Null"
+              required:
+                - peer_addr
+                - local_addr
+
+      responses:
+        201:
+          description: Created
+          headers:
+            Location:
+              schema:
+                $ref: "#/components/schemas/URL"
+
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PeerWaiting"
+
+        409:
+          description: Not Connected (or) Peer Already Exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Peer"
+
+  /peers/{peer_addr}:
+    get:
+      operationId: getPeer
+      tags:
+        - Peer
+      parameters:
+        - name: peer_addr
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/Socket"
+      responses:
+        200:
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Peers"
+
+        404:
+          description: Peer Address Not Found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PeerFailed"
+
+        409:
+          description: Not Connected
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PeerFailed"
+
+    delete:
+      operationId: removePeer
+      tags:
+        - Peer
+      parameters:
+        - name: peer_addr
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/Socket"
+      responses:
+        202:
+          description: Deleting
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Peer"
+
+        204:
+          description: Deleted
+
+        404:
+          description: Peer Address Not Found
+
+        409:
+          description: Not Connected
+
+  /peers/{peer_addr}/local_addr:
+    get:
+      operationId: getPeerLocalAddr
+      tags:
+        - Peer
+      parameters:
+        - name: peer_addr
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/Socket"
+      responses:
+        200:
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Socket"
+
+        404:
+          description: Peer Address Not Found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PeerFailed"
+
+        409:
+          description: Not Connected (or) Peer Not Ready
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PeerNotReady"
+
+security:
+  - bearer: []
+
+components:
+  securitySchemes:
+    bearer:
+      type: apiKey
+      in: header
+      name: Authentication
+      description: '"Bearer " + TURN_RELAY_TOKEN'
+
+  schemas:
+    URL:
+      type: string
+      format: url
+      minLength: 1
+
+    IP:
+      type: string
+      format: ip
+      minLength: 1
+
+    Socket:
+      type: string
+      format: socket
+      minLength: 1
+
+    Username:
+      type: string
+      minLength: 1
+
+    Password:
+      type: string
+      minLength: 1
+
+    'Null':
+      type: 'null'
+
+    EmptyArray:
+      type: array
+      items: {}
+      maxLength: 0
+      enum:
+        - []
+      example: []
+
+    Relay:
+      oneOf:
+        - $ref: "#/components/schemas/RelayDisconnected"
+        - $ref: "#/components/schemas/RelayConnecting"
+        - $ref: "#/components/schemas/RelayConnectionFailed"
+        - $ref: "#/components/schemas/RelayConnected"
+
+    RelayNotDisconnected:
+      oneOf:
+        - $ref: "#/components/schemas/RelayConnecting"
+        - $ref: "#/components/schemas/RelayConnectionFailed"
+        - $ref: "#/components/schemas/RelayConnected"
+
+    RelayDisconnected:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [Disconnected]
+      required:
+        - type
+
+    RelayConnecting:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [Connecting]
+      required:
+        - type
+
+    RelayConnectionFailed:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [ConnectionFailed]
+        why:
+          type: string
+      required:
+        - type
+        - why
+
+    RelayConnected:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [Connected]
+        relay_addr:
+          $ref: "#/components/schemas/Socket"
+        fwd_addr:
+          $ref: "#/components/schemas/Socket"
+        peers:
+          $ref: "#/components/schemas/Peers"
+      required:
+        - type
+        - server
+        - relay_addr
+        - fwd_addr
+        - peers
+
+    Peers:
+      type: array
+      items:
+        $ref: "#/components/schemas/Peer"
+
+    Peer:
+      oneOf:
+        - $ref: "#/components/schemas/PeerWaiting"
+        - $ref: "#/components/schemas/PeerFailed"
+        - $ref: "#/components/schemas/PeerReady"
+
+    PeerNotReady:
+      oneOf:
+        - $ref: "#/components/schemas/PeerWaiting"
+        - $ref: "#/components/schemas/PeerFailed"
+
+    PeerWaiting:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [Waiting]
+        peer_addr:
+          $ref: "#/components/schemas/Socket"
+        local_addr:
+          oneOf:
+            - $ref: "#/components/schemas/Socket"
+            - $ref: "#/components/schemas/Null"
+        authorized:
+          type: boolean
+      required:
+        - type
+        - peer_addr
+        - local_addr
+        - authorized
+
+    PeerFailed:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [Failed]
+        peer_addr:
+          $ref: "#/components/schemas/Socket"
+        permission_denied:
+          type: boolean
+        bind_failed:
+          type: boolean
+      required:
+        - type
+        - peer_addr
+        - permission_denied
+        - bind_failed
+
+    PeerReady:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [Ready]
+        peer_addr:
+          $ref: "#/components/schemas/Socket"
+        local_addr:
+          $ref: "#/components/schemas/Socket"
+      required:
+        - type
+        - peer_addr
+        - local_addr

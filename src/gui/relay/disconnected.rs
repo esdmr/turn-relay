@@ -9,7 +9,7 @@ use tokio::sync::broadcast;
 use crate::{
     gui::{
         relay::{connected, connecting, connection_failed},
-        types::IcedComponent,
+        component::IcedComponent,
     },
     worker::CommandMessage,
 };

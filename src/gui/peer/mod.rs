@@ -2,14 +2,13 @@ mod editing_local;
 mod editing_peer;
 mod failed;
 mod ready;
-mod types;
 mod waiting;
 
 use std::net::SocketAddr;
 
 use tokio::sync::broadcast;
 
-use crate::{gui::macros::router_component, worker::CommandMessage};
+use crate::{gui::router::router_component, worker::CommandMessage};
 
 router_component! {
     message enum Message {

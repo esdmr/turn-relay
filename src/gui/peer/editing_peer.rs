@@ -6,7 +6,7 @@ use iced::{
 };
 use tokio::sync::broadcast;
 
-use crate::{gui::types::IcedComponent, macros::addr, worker::CommandMessage, LOCAL_IP};
+use crate::{gui::component::IcedComponent, addr::addr, worker::CommandMessage, LOCAL_IP};
 
 #[derive(Debug, Clone)]
 pub enum Message {
